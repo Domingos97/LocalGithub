@@ -1,0 +1,113 @@
+.terminal-container {
+  background: #1e1e1e;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+
+.terminal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: #2d2d2d;
+  border-bottom: 1px solid #3d3d3d;
+}
+
+.terminal-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #e0e0e0;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.terminal-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.terminal-btn {
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  padding: 0.375rem;
+  border-radius: 4px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.terminal-btn:hover {
+  background: #3d3d3d;
+  color: #e0e0e0;
+}
+
+.terminal-body {
+  padding: 1rem;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'Cascadia Code', 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+
+.terminal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.terminal-body::-webkit-scrollbar-track {
+  background: #2d2d2d;
+}
+
+.terminal-body::-webkit-scrollbar-thumb {
+  background: #4d4d4d;
+  border-radius: 4px;
+}
+
+.terminal-body::-webkit-scrollbar-thumb:hover {
+  background: #5d5d5d;
+}
+
+.terminal-empty {
+  color: #666;
+  font-style: italic;
+  text-align: center;
+  padding: 2rem;
+}
+
+.terminal-line {
+  display: flex;
+  gap: 1rem;
+}
+
+.terminal-line-number {
+  color: #555;
+  min-width: 2.5rem;
+  text-align: right;
+  user-select: none;
+}
+
+.terminal-line-content {
+  color: #e0e0e0;
+  word-break: break-all;
+}
+
+.terminal-error {
+  color: #f87171;
+}
+
+.terminal-warning {
+  color: #fbbf24;
+}
+
+.terminal-success {
+  color: #4ade80;
+}
+
+.terminal-command {
+  color: #60a5fa;
+}

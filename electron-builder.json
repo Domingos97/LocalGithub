@@ -1,0 +1,15 @@
+{
+  "appId": "com.localgithub.app",
+  "productName": "LocalGitHub Manager",
+  "files": ["dist", "node_modules", "package.json"],
+  "directories": {
+    "buildResources": "assets"
+  },
+  "win": {
+    "target": ["nsis", "portable"]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
+}
