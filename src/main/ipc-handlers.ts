@@ -1,4 +1,5 @@
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
+import { spawn } from 'child_process';
 import { githubService } from './github-service.js';
 import { projectDetector } from './project-detector.js';
 import { processManager } from './process-manager.js';
@@ -70,6 +71,16 @@ export function registerIpcHandlers() {
     try {
       const result = await projectInstaller.isProjectInstalled(repoName);
       return { success: true, data: result };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  // Uninstall/delete a project
+  ipcMain.handle('project:uninstall', async (_event, repoName: string) => {
+    try {
+      await gitOps.deleteProject(repoName);
+      return { success: true };
     } catch (error) {
       return { success: false, error: (error as Error).message };
     }
@@ -194,6 +205,22 @@ export function registerIpcHandlers() {
   ipcMain.handle('process:stopAll', async () => {
     try {
       processManager.stopAllProcesses();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  // Open project in VS Code
+  ipcMain.handle('project:openInVSCode', async (_event, projectPath: string) => {
+    try {
+      // Use spawn to run 'code' command which opens VS Code
+      const child = spawn('code', [projectPath], {
+        shell: true,
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
       return { success: true };
     } catch (error) {
       return { success: false, error: (error as Error).message };

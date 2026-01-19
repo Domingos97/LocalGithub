@@ -15,6 +15,8 @@ import {
   Globe,
   Lock,
   RefreshCw,
+  FileCode,
+  Trash2,
 } from 'lucide-react';
 import ProgressBar from '../components/ProgressBar';
 import TerminalOutput from '../components/TerminalOutput';
@@ -65,6 +67,29 @@ function ProjectDetailsPage() {
   useEffect(() => {
     loadRepoDetails();
   }, [repoName]);
+
+  useEffect(() => {
+    checkInstallStatus();
+  }, [repoName]);
+
+  const checkInstallStatus = async () => {
+    if (!repoName) return;
+    try {
+      const result = await (window as any).electronAPI.project.isInstalled(repoName);
+      if (result.success && result.data.installed) {
+        const pathResult = await (window as any).electronAPI.git.getProjectPath(repoName);
+        if (pathResult.success) {
+          setProjectState(prev => ({
+            ...prev,
+            isInstalled: true,
+            localPath: pathResult.data.projectPath,
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Error checking install status:', error);
+    }
+  };
 
   const loadRepoDetails = async () => {
     try {
@@ -202,6 +227,37 @@ function ProjectDetailsPage() {
     }
   };
 
+  const handleOpenInVSCode = async () => {
+    if (!projectState.localPath) return;
+    try {
+      const result = await (window as any).electronAPI.project.openInVSCode(projectState.localPath);
+      if (result.success) {
+        addToast({ type: 'success', title: 'Opening VS Code', message: `Opening ${repo?.name} in Visual Studio Code` });
+      } else {
+        addToast({ type: 'error', title: 'Failed to open VS Code', message: result.error });
+      }
+    } catch (error) {
+      console.error('Error opening in VS Code:', error);
+      addToast({ type: 'error', title: 'Error', message: 'Failed to open in Visual Studio Code' });
+    }
+  };
+
+  const handleUninstall = async () => {
+    if (!repo) return;
+    try {
+      const result = await (window as any).electronAPI.project.uninstall(repo.name);
+      if (result.success) {
+        setProjectState({ isInstalled: false, isRunning: false });
+        addToast({ type: 'success', title: 'Uninstalled', message: `${repo.name} has been removed` });
+      } else {
+        addToast({ type: 'error', title: 'Uninstall Failed', message: result.error });
+      }
+    } catch (error) {
+      console.error('Error uninstalling:', error);
+      addToast({ type: 'error', title: 'Error', message: 'Failed to uninstall project' });
+    }
+  };
+
   const formatSize = (kb: number) => {
     if (kb < 1024) return `${kb} KB`;
     return `${(kb / 1024).toFixed(1)} MB`;
@@ -252,6 +308,18 @@ function ProjectDetailsPage() {
           <p className="header-description">{repo.description || 'No description'}</p>
         </div>
         <div className="header-actions">
+          {projectState.isInstalled && projectState.localPath && (
+            <button className="btn btn-vscode" onClick={handleOpenInVSCode}>
+              <FileCode size={16} />
+              Open in VS Code
+            </button>
+          )}
+          {projectState.isInstalled && (
+            <button className="btn btn-danger-outline" onClick={handleUninstall}>
+              <Trash2 size={16} />
+              Uninstall
+            </button>
+          )}
           <button className="btn btn-ghost" onClick={handleOpenGitHub}>
             <ExternalLink size={16} />
             View on GitHub

@@ -19,6 +19,10 @@ const api = {
     getConfig: (projectPath: string) => 
       ipcRenderer.invoke('project:getConfig', projectPath),
     getBaseDir: () => ipcRenderer.invoke('project:getBaseDir'),
+    openInVSCode: (projectPath: string) => 
+      ipcRenderer.invoke('project:openInVSCode', projectPath),
+    uninstall: (repoName: string) => 
+      ipcRenderer.invoke('project:uninstall', repoName),
     onInstallProgress: (callback: (data: any) => void) => {
       const handler = (_event: any, data: any) => callback(data);
       ipcRenderer.on('project:installProgress', handler);

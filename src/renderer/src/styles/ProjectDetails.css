@@ -91,7 +91,32 @@
 }
 
 .header-actions {
+  display: flex;
+  gap: 0.5rem;
   flex-shrink: 0;
+}
+
+/* VS Code Button */
+.btn-vscode {
+  background: #007acc;
+  color: white;
+  border: none;
+}
+
+.btn-vscode:hover {
+  background: #005a9e;
+}
+
+/* Danger Outline Button */
+.btn-danger-outline {
+  background: transparent;
+  color: #dc2626;
+  border: 1px solid #dc2626;
+}
+
+.btn-danger-outline:hover {
+  background: #dc2626;
+  color: white;
 }
 
 /* Stats */

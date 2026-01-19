@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Star, GitFork, Clock, Lock, Globe, Download, Check, Loader } from 'lucide-react';
+import { Star, GitFork, Clock, Lock, Globe, Download, Check, Loader, Code, Trash2 } from 'lucide-react';
 import '../styles/ProjectCard.css';
 
 interface ProjectCardProps {
@@ -18,6 +18,9 @@ interface ProjectCardProps {
   onSelect: () => void;
   isInstalled?: boolean;
   onInstall?: (repoUrl: string, repoName: string) => Promise<void>;
+  localPath?: string;
+  onOpenInVSCode?: (projectPath: string) => void;
+  onUninstall?: (repoName: string) => Promise<void>;
   style?: React.CSSProperties;
 }
 
@@ -40,8 +43,9 @@ const languageColors: Record<string, string> = {
   Dart: '#00B4AB',
 };
 
-function ProjectCard({ repo, onSelect, isInstalled, onInstall, style }: ProjectCardProps) {
+function ProjectCard({ repo, onSelect, isInstalled, onInstall, localPath, onOpenInVSCode, onUninstall, style }: ProjectCardProps) {
   const [installing, setInstalling] = useState(false);
+  const [uninstalling, setUninstalling] = useState(false);
   
   const updatedDate = new Date(repo.updated_at);
   const now = new Date();
@@ -75,6 +79,25 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, style }: ProjectC
       await onInstall(cloneUrl, repo.name);
     } finally {
       setInstalling(false);
+    }
+  };
+
+  const handleOpenInVSCode = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+    if (onOpenInVSCode && localPath) {
+      onOpenInVSCode(localPath);
+    }
+  };
+
+  const handleUninstall = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+    if (!onUninstall || uninstalling || !isInstalled) return;
+    
+    setUninstalling(true);
+    try {
+      await onUninstall(repo.name);
+    } finally {
+      setUninstalling(false);
     }
   };
 
@@ -126,6 +149,36 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, style }: ProjectC
             <Clock size={12} />
             {timeAgo}
           </span>
+          {isInstalled && localPath && onOpenInVSCode && (
+            <button
+              className="vscode-btn"
+              onClick={handleOpenInVSCode}
+              title="Open in Visual Studio Code"
+            >
+              <Code size={14} />
+              Open in VS Code
+            </button>
+          )}
+          {isInstalled && onUninstall && (
+            <button
+              className={`uninstall-btn ${uninstalling ? 'uninstalling' : ''}`}
+              onClick={handleUninstall}
+              disabled={uninstalling}
+              title="Uninstall project"
+            >
+              {uninstalling ? (
+                <>
+                  <Loader size={14} className="spin" />
+                  Removing...
+                </>
+              ) : (
+                <>
+                  <Trash2 size={14} />
+                  Uninstall
+                </>
+              )}
+            </button>
+          )}
           {onInstall && (
             <button
               className={`install-btn ${isInstalled ? 'installed' : ''} ${installing ? 'installing' : ''}`}

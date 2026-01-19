@@ -28,6 +28,7 @@ function ProjectsPage() {
   const [languageFilter, setLanguageFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
   const [installedProjects, setInstalledProjects] = useState<Set<string>>(new Set());
+  const [projectPaths, setProjectPaths] = useState<Record<string, string>>({});
   const navigate = useNavigate();
   const { addToast } = useToast();
 
@@ -59,17 +60,24 @@ function ProjectsPage() {
 
   const checkInstalledProjects = async (repositories: Repository[]) => {
     const installed = new Set<string>();
+    const paths: Record<string, string> = {};
     for (const repo of repositories) {
       try {
         const result = await (window as any).electronAPI.project.isInstalled(repo.name);
         if (result.success && result.data.installed) {
           installed.add(repo.name);
+          // Get the project path
+          const pathResult = await (window as any).electronAPI.git.getProjectPath(repo.name);
+          if (pathResult.success) {
+            paths[repo.name] = pathResult.data.projectPath;
+          }
         }
       } catch (error) {
         // Ignore errors for individual checks
       }
     }
     setInstalledProjects(installed);
+    setProjectPaths(paths);
   };
 
   const handleInstall = async (repoUrl: string, repoName: string) => {
@@ -97,6 +105,11 @@ function ProjectsPage() {
       
       if (result.success) {
         setInstalledProjects(prev => new Set([...prev, repoName]));
+        // Get the project path after installation
+        const pathResult = await (window as any).electronAPI.git.getProjectPath(repoName);
+        if (pathResult.success) {
+          setProjectPaths(prev => ({ ...prev, [repoName]: pathResult.data.projectPath }));
+        }
         addToast({ 
           type: 'success', 
           title: 'Installation Complete', 
@@ -117,6 +130,66 @@ function ProjectsPage() {
       });
     } finally {
       unsubscribe();
+    }
+  };
+
+  const handleOpenInVSCode = async (projectPath: string) => {
+    try {
+      const result = await (window as any).electronAPI.project.openInVSCode(projectPath);
+      if (result.success) {
+        addToast({ 
+          type: 'success', 
+          title: 'Opening VS Code', 
+          message: 'Opening project in Visual Studio Code' 
+        });
+      } else {
+        addToast({ 
+          type: 'error', 
+          title: 'Failed to open VS Code', 
+          message: result.error 
+        });
+      }
+    } catch (error) {
+      addToast({ 
+        type: 'error', 
+        title: 'Error', 
+        message: 'Failed to open in Visual Studio Code' 
+      });
+    }
+  };
+
+  const handleUninstall = async (repoName: string) => {
+    try {
+      const result = await (window as any).electronAPI.project.uninstall(repoName);
+      if (result.success) {
+        setInstalledProjects(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(repoName);
+          return newSet;
+        });
+        setProjectPaths(prev => {
+          const newPaths = { ...prev };
+          delete newPaths[repoName];
+          return newPaths;
+        });
+        addToast({ 
+          type: 'success', 
+          title: 'Uninstalled', 
+          message: `${repoName} has been removed` 
+        });
+      } else {
+        addToast({ 
+          type: 'error', 
+          title: 'Uninstall Failed', 
+          message: result.error 
+        });
+      }
+    } catch (error) {
+      addToast({ 
+        type: 'error', 
+        title: 'Error', 
+        message: 'Failed to uninstall project' 
+      });
     }
   };
 
@@ -215,6 +288,9 @@ function ProjectsPage() {
               onSelect={() => navigate(`/projects/${repo.name}`)}
               isInstalled={installedProjects.has(repo.name)}
               onInstall={handleInstall}
+              localPath={projectPaths[repo.name]}
+              onOpenInVSCode={handleOpenInVSCode}
+              onUninstall={handleUninstall}
               style={{ animationDelay: `${index * 0.05}s` }}
             />
           ))}

@@ -63,6 +63,17 @@ class GitOperations {
   getBaseDir(): string {
     return this.baseDir;
   }
+
+  async deleteProject(repoName: string): Promise<void> {
+    const projectPath = path.join(this.baseDir, repoName);
+    try {
+      await fs.access(projectPath);
+      await fs.rm(projectPath, { recursive: true, force: true });
+    } catch (error) {
+      console.error('Delete error:', error);
+      throw error;
+    }
+  }
 }
 
 interface InstallOptions {
