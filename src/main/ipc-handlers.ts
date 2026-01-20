@@ -5,6 +5,7 @@ import { projectDetector } from './project-detector.js';
 import { processManager } from './process-manager.js';
 import { gitOps, installer } from './git-operations.js';
 import { projectInstaller } from './project-installer.js';
+import { notesService } from './notes-service.js';
 
 export function registerIpcHandlers() {
   // GitHub API Handlers
@@ -222,6 +223,65 @@ export function registerIpcHandlers() {
       });
       child.unref();
       return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  // Notes Handlers
+  ipcMain.handle('notes:get', async (_event, repoName: string) => {
+    console.debug('IPC notes:get called for', repoName);
+    try {
+      const notes = await notesService.getNotes(repoName);
+      return { success: true, data: notes };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('notes:save', async (_event, repoName: string, notes: any[]) => {
+    try {
+      await notesService.saveNotes(repoName, notes);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('notes:add', async (_event, repoName: string, text: string) => {
+    try {
+      const note = await notesService.addNote(repoName, text);
+      return { success: true, data: note };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('notes:update', async (_event, repoName: string, noteId: string, updates: any) => {
+    try {
+      const note = await notesService.updateNote(repoName, noteId, updates);
+      return { success: true, data: note };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('notes:delete', async (_event, repoName: string, noteId: string) => {
+    try {
+      const success = await notesService.deleteNote(repoName, noteId);
+      return { success };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  // Fetch notes from the GitHub repository (notes.txt / NOTES.md / notes.json)
+  ipcMain.handle('notes:fetchFromRepo', async (_event, repoName: string) => {
+    console.debug('IPC notes:fetchFromRepo called for', repoName);
+    try {
+      const notes = await notesService.fetchNotesFromRepoName(repoName);
+      console.debug('notes:fetchFromRepo result for', repoName, '->', (notes.notes || []).length, 'items');
+      return { success: true, data: notes };
     } catch (error) {
       return { success: false, error: (error as Error).message };
     }

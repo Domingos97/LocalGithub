@@ -66,6 +66,18 @@ const api = {
       ipcRenderer.on('process:output', (_event, data) => callback(data));
     },
   },
+
+  // Notes Management
+  notes: {
+    get: (repoName: string) => ipcRenderer.invoke('notes:get', repoName),
+    save: (repoName: string, notes: any[]) => ipcRenderer.invoke('notes:save', repoName, notes),
+    add: (repoName: string, text: string) => ipcRenderer.invoke('notes:add', repoName, text),
+    update: (repoName: string, noteId: string, updates: any) =>
+      ipcRenderer.invoke('notes:update', repoName, noteId, updates),
+    delete: (repoName: string, noteId: string) =>
+      ipcRenderer.invoke('notes:delete', repoName, noteId),
+    fetchFromRepo: (repoName: string) => ipcRenderer.invoke('notes:fetchFromRepo', repoName),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

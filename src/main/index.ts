@@ -50,8 +50,18 @@ const createWindow = () => {
 app.on('ready', async () => {
   createWindow();
   // Import after dotenv is loaded
-  const { registerIpcHandlers } = require('./ipc-handlers');
-  registerIpcHandlers();
+  try {
+    const ipcModule = require('./ipc-handlers');
+    // Support named export, default export, or module directly exporting the function
+    const register = ipcModule?.registerIpcHandlers || ipcModule?.default || ipcModule;
+    if (typeof register === 'function') {
+      register();
+    } else {
+      console.error('registerIpcHandlers is not available. IPC handlers were not registered.', Object.keys(ipcModule || {}));
+    }
+  } catch (err) {
+    console.error('Failed to load ipc-handlers module:', err);
+  }
 });
 
 app.on('window-all-closed', () => {

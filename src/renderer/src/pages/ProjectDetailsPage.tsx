@@ -21,6 +21,7 @@ import {
 import ProgressBar from '../components/ProgressBar';
 import TerminalOutput from '../components/TerminalOutput';
 import Spinner from '../components/Spinner';
+import ProjectNotes from '../components/ProjectNotes';
 import { useToast } from '../components/Toast';
 import '../styles/ProjectDetails.css';
 
@@ -423,6 +424,9 @@ function ProjectDetailsPage() {
           />
         </div>
       )}
+
+      {/* Project Notes */}
+      <ProjectNotes repoName={repo.full_name} />
 
       {/* Terminal Output */}
       {terminalLines.length > 0 && (
