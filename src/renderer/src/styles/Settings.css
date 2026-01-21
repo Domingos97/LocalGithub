@@ -161,6 +161,19 @@
   word-break: break-all;
 }
 
+.setting-path-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-end;
+  flex: 1;
+  max-width: 400px;
+}
+
+.setting-path-wrapper .setting-path {
+  width: 100%;
+}
+
 /* Toggle Switch */
 .toggle {
   position: relative;

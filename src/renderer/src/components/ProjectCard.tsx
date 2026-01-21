@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Star, GitFork, Clock, Lock, Globe, Download, Check, Loader, Code, Trash2 } from 'lucide-react';
+import { Star, GitFork, Clock, Lock, Globe, Download, Check, Loader, Code, Trash2, GitPullRequest, AlertCircle, Link } from 'lucide-react';
 import '../styles/ProjectCard.css';
 
 interface ProjectCardProps {
@@ -18,10 +18,14 @@ interface ProjectCardProps {
   onSelect: () => void;
   isInstalled?: boolean;
   onInstall?: (repoUrl: string, repoName: string) => Promise<void>;
+  onLinkExisting?: (repoName: string, repoUrl: string) => Promise<void>;
   localPath?: string;
   onOpenInVSCode?: (projectPath: string) => void;
   onUninstall?: (repoName: string) => Promise<void>;
   style?: React.CSSProperties;
+  hasRemoteChanges?: boolean;
+  behindCount?: number;
+  onPull?: (repoName: string) => Promise<void>;
 }
 
 const languageColors: Record<string, string> = {
@@ -43,9 +47,16 @@ const languageColors: Record<string, string> = {
   Dart: '#00B4AB',
 };
 
-function ProjectCard({ repo, onSelect, isInstalled, onInstall, localPath, onOpenInVSCode, onUninstall, style }: ProjectCardProps) {
+function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, localPath, onOpenInVSCode, onUninstall, style, hasRemoteChanges, behindCount, onPull }: ProjectCardProps) {
   const [installing, setInstalling] = useState(false);
   const [uninstalling, setUninstalling] = useState(false);
+  const [pulling, setPulling] = useState(false);
+  const [linking, setLinking] = useState(false);
+  
+  // Debug logging
+  if (isInstalled) {
+    console.log(`ProjectCard ${repo.name}:`, { isInstalled, hasRemoteChanges, behindCount, onPull: !!onPull });
+  }
   
   const updatedDate = new Date(repo.updated_at);
   const now = new Date();
@@ -101,12 +112,49 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, localPath, onOpen
     }
   };
 
+  const handlePull = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+    if (!onPull || pulling || !isInstalled) return;
+    
+    setPulling(true);
+    try {
+      await onPull(repo.name);
+    } finally {
+      setPulling(false);
+    }
+  };
+
+  const handleLinkExisting = async (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+    if (!onLinkExisting || linking || isInstalled) return;
+    
+    const cloneUrl = repo.clone_url || `https://github.com/${repo.full_name}.git`;
+    setLinking(true);
+    try {
+      await onLinkExisting(repo.name, cloneUrl);
+    } finally {
+      setLinking(false);
+    }
+  };
+
   return (
     <div className="project-card animate-slideUp" onClick={onSelect} style={style}>
       <div className="card-header">
         <div className="card-title-row">
           <h3 className="card-title">{repo.name}</h3>
           <div className="card-badges">
+            {isInstalled && hasRemoteChanges && (
+              <span className="remote-changes-badge" title={`${behindCount} commit(s) behind`}>
+                <AlertCircle size={12} />
+                Update Available
+              </span>
+            )}
+            {isInstalled && hasRemoteChanges === false && (
+              <span className="up-to-date-badge" title="Local repository is up to date">
+                <Check size={12} />
+                Up to Date
+              </span>
+            )}
             {isInstalled && (
               <span className="installed-badge">
                 <Check size={12} />
@@ -149,6 +197,31 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, localPath, onOpen
             <Clock size={12} />
             {timeAgo}
           </span>
+          {isInstalled && onPull && (
+            <button
+              className={`pull-btn ${hasRemoteChanges ? 'has-updates' : ''} ${pulling ? 'pulling' : ''}`}
+              onClick={handlePull}
+              disabled={pulling}
+              title={hasRemoteChanges ? `Pull ${behindCount} commit(s) from remote` : 'Check for updates and pull if available'}
+            >
+              {pulling ? (
+                <>
+                  <Loader size={14} className="spin" />
+                  Pulling...
+                </>
+              ) : hasRemoteChanges ? (
+                <>
+                  <GitPullRequest size={14} />
+                  Pull Changes
+                </>
+              ) : (
+                <>
+                  <GitPullRequest size={14} />
+                  Sync
+                </>
+              )}
+            </button>
+          )}
           {isInstalled && localPath && onOpenInVSCode && (
             <button
               className="vscode-btn"
@@ -191,6 +264,39 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, localPath, onOpen
                   <Loader size={14} className="spin" />
                   Installing...
                 </>
+              ) : isInstalled ? (
+                <>
+                  <Check size={14} />
+                  Installed
+                </>
+              ) : (
+                <>
+                  <Download size={14} />
+                  Install
+                </>
+              )}
+            </button>
+          )}
+          {onInstall && !isInstalled && onLinkExisting && (
+            <button
+              className={`link-btn ${linking ? 'linking' : ''}`}
+              onClick={handleLinkExisting}
+              disabled={linking}
+              title="Link an existing local folder to this repository"
+            >
+              {linking ? (
+                <>
+                  <Loader size={14} className="spin" />
+                  Linking...
+                </>
+              ) : (
+                <>
+                  <Link size={14} />
+                  Link Existing
+                </>
+              )}
+            </button>
+          )}
               ) : isInstalled ? (
                 <>
                   <Check size={14} />

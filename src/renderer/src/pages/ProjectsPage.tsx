@@ -29,6 +29,7 @@ function ProjectsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [installedProjects, setInstalledProjects] = useState<Set<string>>(new Set());
   const [projectPaths, setProjectPaths] = useState<Record<string, string>>({});
+  const [remoteChanges, setRemoteChanges] = useState<Record<string, { hasChanges: boolean; behindCount: number }>>({});
   const navigate = useNavigate();
   const { addToast } = useToast();
 
@@ -61,6 +62,8 @@ function ProjectsPage() {
   const checkInstalledProjects = async (repositories: Repository[]) => {
     const installed = new Set<string>();
     const paths: Record<string, string> = {};
+    const changes: Record<string, { hasChanges: boolean; behindCount: number }> = {};
+    
     for (const repo of repositories) {
       try {
         const result = await (window as any).electronAPI.project.isInstalled(repo.name);
@@ -71,6 +74,20 @@ function ProjectsPage() {
           if (pathResult.success) {
             paths[repo.name] = pathResult.data.projectPath;
           }
+          
+          // Check for remote changes
+          try {
+            const changesResult = await (window as any).electronAPI.git.checkRemoteChanges(repo.name);
+            if (changesResult.success) {
+              changes[repo.name] = {
+                hasChanges: changesResult.data.hasChanges,
+                behindCount: changesResult.data.behind
+              };
+            }
+          } catch (error) {
+            // Silently ignore errors checking for remote changes
+            console.warn(`Failed to check remote changes for ${repo.name}:`, error);
+          }
         }
       } catch (error) {
         // Ignore errors for individual checks
@@ -78,6 +95,9 @@ function ProjectsPage() {
     }
     setInstalledProjects(installed);
     setProjectPaths(paths);
+    setRemoteChanges(changes);
+    console.log('Installed projects:', installed);
+    console.log('Remote changes:', changes);
   };
 
   const handleInstall = async (repoUrl: string, repoName: string) => {
@@ -172,6 +192,11 @@ function ProjectsPage() {
           delete newPaths[repoName];
           return newPaths;
         });
+        setRemoteChanges(prev => {
+          const newChanges = { ...prev };
+          delete newChanges[repoName];
+          return newChanges;
+        });
         addToast({ 
           type: 'success', 
           title: 'Uninstalled', 
@@ -189,6 +214,88 @@ function ProjectsPage() {
         type: 'error', 
         title: 'Error', 
         message: 'Failed to uninstall project' 
+      });
+    }
+  };
+
+  const handlePull = async (repoName: string) => {
+    try {
+      addToast({ 
+        type: 'info', 
+        title: 'Pulling Changes', 
+        message: `Pulling updates for ${repoName}...` 
+      });
+
+      const result = await (window as any).electronAPI.git.pull(repoName);
+      
+      if (result.success && result.data.success) {
+        // After successful pull, update remote changes status
+        setRemoteChanges(prev => ({
+          ...prev,
+          [repoName]: { hasChanges: false, behindCount: 0 }
+        }));
+        
+        addToast({ 
+          type: 'success', 
+          title: 'Pull Complete', 
+          message: result.data.message 
+        });
+      } else {
+        addToast({ 
+          type: 'error', 
+          title: 'Pull Failed', 
+          message: result.data?.message || result.error || 'Unknown error occurred' 
+        });
+      }
+    } catch (error) {
+      addToast({ 
+        type: 'error', 
+        title: 'Pull Error', 
+        message: String(error) 
+      });
+    }
+  };
+
+  const handleLinkExisting = async (repoName: string, repoUrl: string) => {
+    try {
+      // Open folder picker
+      const folderResult = await (window as any).electronAPI.dialog.selectFolder();
+      if (!folderResult.success || folderResult.canceled) {
+        return;
+      }
+
+      addToast({ 
+        type: 'info', 
+        title: 'Linking Folder', 
+        message: `Linking ${repoName} to existing folder...` 
+      });
+
+      const result = await (window as any).electronAPI.project.linkExisting(
+        folderResult.path, 
+        repoUrl, 
+        repoName
+      );
+      
+      if (result.success) {
+        setInstalledProjects(prev => new Set([...prev, repoName]));
+        setProjectPaths(prev => ({ ...prev, [repoName]: folderResult.path }));
+        addToast({ 
+          type: 'success', 
+          title: 'Folder Linked', 
+          message: result.message 
+        });
+      } else {
+        addToast({ 
+          type: 'error', 
+          title: 'Link Failed', 
+          message: result.message || 'Failed to link folder' 
+        });
+      }
+    } catch (error) {
+      addToast({ 
+        type: 'error', 
+        title: 'Link Error', 
+        message: String(error) 
       });
     }
   };
@@ -288,9 +395,13 @@ function ProjectsPage() {
               onSelect={() => navigate(`/projects/${repo.name}`)}
               isInstalled={installedProjects.has(repo.name)}
               onInstall={handleInstall}
+              onLinkExisting={handleLinkExisting}
               localPath={projectPaths[repo.name]}
               onOpenInVSCode={handleOpenInVSCode}
               onUninstall={handleUninstall}
+              hasRemoteChanges={remoteChanges[repo.name]?.hasChanges}
+              behindCount={remoteChanges[repo.name]?.behindCount}
+              onPull={handlePull}
               style={{ animationDelay: `${index * 0.05}s` }}
             />
           ))}

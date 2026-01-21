@@ -233,18 +233,22 @@ class NotesService {
         const content = await githubService.getRawFileContent(owner, repo, p);
         if (content) {
           console.info(`Found notes file in ${owner}/${repo}/${p} (len=${content.length})`);
-          // Return the whole file as a single raw note (do not assume TODO/done sections)
-          const note: ProjectNote = {
-            id: this.generateId(),
-            text: content,
-            status: 'pending',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+          // Return the whole file as raw content (do not parse or create note items)
+          const projectNotes: ProjectNotes = { 
+            repoName: repo, 
+            notes: [], 
+            rawContent: content, 
+            rawPath: p 
           };
-          const projectNotes: ProjectNotes = { repoName: repo, notes: [note], rawContent: content, rawPath: p };
-          // Save a local copy for offline use
-          await this.saveNotes(repo, projectNotes.notes);
-          console.info(`Saved raw notes copy for ${owner}/${repo} from ${p}`);
+          // Save a local copy with rawContent for offline use
+          const filePath = this.getNotesFilePath(repo);
+          try {
+            this.ensureNotesDir();
+            fs.writeFileSync(filePath, JSON.stringify(projectNotes, null, 2), 'utf-8');
+            console.info(`Saved raw notes copy for ${owner}/${repo} from ${p}`);
+          } catch (saveErr) {
+            console.warn('Could not save notes locally:', saveErr);
+          }
           return projectNotes;
         }
       } catch (err) {

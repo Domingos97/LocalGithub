@@ -2,6 +2,7 @@ import { simpleGit, SimpleGit } from 'simple-git';
 import path from 'path';
 import fs from 'fs/promises';
 import { execSync } from 'child_process';
+import { app } from 'electron';
 
 interface CloneOptions {
   onProgress?: (message: string) => void;
@@ -9,9 +10,43 @@ interface CloneOptions {
 
 class GitOperations {
   private baseDir: string;
+  private configPath: string;
 
   constructor() {
+    this.configPath = path.join(app.getPath('userData'), 'config.json');
     this.baseDir = path.join(process.env.APPDATA || process.env.HOME || '', '.localgithub', 'projects');
+    this.loadBaseDir();
+  }
+
+  private async loadBaseDir(): Promise<void> {
+    try {
+      const configData = await fs.readFile(this.configPath, 'utf-8');
+      const config = JSON.parse(configData);
+      if (config.baseDir) {
+        this.baseDir = config.baseDir;
+      }
+    } catch {
+      // Config doesn't exist or is invalid, use default
+    }
+  }
+
+  async setBaseDir(newBaseDir: string): Promise<void> {
+    this.baseDir = newBaseDir;
+    try {
+      await this.ensureBaseDir();
+      let config: any = {};
+      try {
+        const configData = await fs.readFile(this.configPath, 'utf-8');
+        config = JSON.parse(configData);
+      } catch {
+        // Config doesn't exist yet
+      }
+      config.baseDir = newBaseDir;
+      await fs.writeFile(this.configPath, JSON.stringify(config, null, 2), 'utf-8');
+    } catch (error) {
+      console.error('Failed to set base directory:', error);
+      throw error;
+    }
   }
 
   async cloneRepository(
@@ -73,6 +108,160 @@ class GitOperations {
       console.error('Delete error:', error);
       throw error;
     }
+  }
+
+  async checkForRemoteChanges(repoName: string): Promise<{ hasChanges: boolean; ahead: number; behind: number }> {
+    const projectPath = path.join(this.baseDir, repoName);
+    try {
+      await fs.access(projectPath);
+      const git: SimpleGit = simpleGit(projectPath);
+      
+      // Fetch latest changes from remote without merging
+      await git.fetch();
+      
+      // Get status to check if we're behind
+      const status = await git.status();
+      
+      return {
+        hasChanges: status.behind > 0,
+        ahead: status.ahead,
+        behind: status.behind
+      };
+    } catch (error) {
+      console.error('Check remote changes error:', error);
+      throw error;
+    }
+  }
+
+  async pullChanges(repoName: string): Promise<{ success: boolean; message: string }> {
+    const projectPath = path.join(this.baseDir, repoName);
+    try {
+      await fs.access(projectPath);
+      const git: SimpleGit = simpleGit(projectPath);
+      
+      // Pull changes
+      const result = await git.pull();
+      
+      if (result.summary.changes > 0 || result.summary.insertions > 0 || result.summary.deletions > 0) {
+        return {
+          success: true,
+          message: `Pulled ${result.summary.changes} file(s) with ${result.summary.insertions} insertions and ${result.summary.deletions} deletions`
+        };
+      } else {
+        return {
+          success: true,
+          message: 'Already up to date'
+        };
+      }
+    } catch (error) {
+      console.error('Pull changes error:', error);
+      return {
+        success: false,
+        message: (error as Error).message
+      };
+    }
+  }
+
+  async linkExistingFolder(localPath: string, repoUrl: string, repoName: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Verify the folder exists
+      await fs.access(localPath);
+      
+      // Check if it's already a git repository
+      const git: SimpleGit = simpleGit(localPath);
+      let isGitRepo = false;
+      try {
+        await git.status();
+        isGitRepo = true;
+      } catch {
+        // Not a git repo, we'll initialize it
+      }
+
+      if (!isGitRepo) {
+        // Initialize git repository
+        await git.init();
+        await git.addRemote('origin', repoUrl);
+      } else {
+        // Check if remote exists, if not add it
+        const remotes = await git.getRemotes(true);
+        const originExists = remotes.some(r => r.name === 'origin');
+        if (!originExists) {
+          await git.addRemote('origin', repoUrl);
+        } else {
+          // Update the remote URL
+          await git.remote(['set-url', 'origin', repoUrl]);
+        }
+      }
+
+      // Create a symlink or record the mapping
+      const targetPath = path.join(this.baseDir, repoName);
+      try {
+        await fs.access(targetPath);
+        // If target exists and is different from localPath, warn user
+        if (path.resolve(targetPath) !== path.resolve(localPath)) {
+          return {
+            success: false,
+            message: `A project named "${repoName}" already exists at a different location`
+          };
+        }
+      } catch {
+        // Target doesn't exist, create symlink
+        try {
+          await fs.symlink(localPath, targetPath, 'junction');
+        } catch (symlinkError) {
+          // If symlink fails, save a mapping instead
+          await this.saveProjectMapping(repoName, localPath);
+        }
+      }
+
+      return {
+        success: true,
+        message: `Successfully linked ${repoName} to ${localPath}`
+      };
+    } catch (error) {
+      console.error('Link existing folder error:', error);
+      return {
+        success: false,
+        message: (error as Error).message
+      };
+    }
+  }
+
+  private async saveProjectMapping(repoName: string, localPath: string): Promise<void> {
+    try {
+      let config: any = {};
+      try {
+        const configData = await fs.readFile(this.configPath, 'utf-8');
+        config = JSON.parse(configData);
+      } catch {
+        // Config doesn't exist yet
+      }
+      if (!config.projectMappings) {
+        config.projectMappings = {};
+      }
+      config.projectMappings[repoName] = localPath;
+      await fs.writeFile(this.configPath, JSON.stringify(config, null, 2), 'utf-8');
+    } catch (error) {
+      console.error('Failed to save project mapping:', error);
+      throw error;
+    }
+  }
+
+  async getProjectMapping(repoName: string): Promise<string | null> {
+    try {
+      const configData = await fs.readFile(this.configPath, 'utf-8');
+      const config = JSON.parse(configData);
+      return config.projectMappings?.[repoName] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async getProjectPathAsync(repoName: string): Promise<string> {
+    // Check for mapping first
+    const mapping = await this.getProjectMapping(repoName);
+    if (mapping) return mapping;
+    return path.join(this.baseDir, repoName);
   }
 }
 

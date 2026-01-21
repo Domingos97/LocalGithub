@@ -1,4 +1,4 @@
-import { ipcMain, shell } from 'electron';
+import { ipcMain, shell, dialog } from 'electron';
 import { spawn } from 'child_process';
 import { githubService } from './github-service.js';
 import { projectDetector } from './project-detector.js';
@@ -107,6 +107,26 @@ export function registerIpcHandlers() {
     }
   });
 
+  // Set the base directory where projects are installed
+  ipcMain.handle('project:setBaseDir', async (_event, newBaseDir) => {
+    try {
+      await gitOps.setBaseDir(newBaseDir);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  // Link an existing folder to a repository
+  ipcMain.handle('project:linkExisting', async (_event, localPath, repoUrl, repoName) => {
+    try {
+      const result = await gitOps.linkExistingFolder(localPath, repoUrl, repoName);
+      return result;
+    } catch (error) {
+      return { success: false, message: (error as Error).message };
+    }
+  });
+
   // Git Operations Handlers
   ipcMain.handle('git:cloneRepository', async (_event, repoUrl, repoName) => {
     try {
@@ -124,6 +144,26 @@ export function registerIpcHandlers() {
   ipcMain.handle('git:getProjectPath', async (_event, repoName) => {
     const projectPath = gitOps.getProjectPath(repoName);
     return { success: true, data: { projectPath } };
+  });
+
+  // Check for remote changes
+  ipcMain.handle('git:checkRemoteChanges', async (_event, repoName) => {
+    try {
+      const result = await gitOps.checkForRemoteChanges(repoName);
+      return { success: true, data: result };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  // Pull remote changes
+  ipcMain.handle('git:pull', async (_event, repoName) => {
+    try {
+      const result = await gitOps.pullChanges(repoName);
+      return { success: true, data: result };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
   });
 
   // Installer Handlers
@@ -285,5 +325,16 @@ export function registerIpcHandlers() {
     } catch (error) {
       return { success: false, error: (error as Error).message };
     }
+  });
+
+  // Dialog handlers
+  ipcMain.handle('dialog:selectFolder', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory']
+    });
+    if (result.canceled) {
+      return { success: false, canceled: true };
+    }
+    return { success: true, path: result.filePaths[0] };
   });
 }

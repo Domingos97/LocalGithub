@@ -53,6 +53,23 @@ function SettingsPage() {
     }
   };
 
+  const handleSelectProjectsDir = async () => {
+    try {
+      const result = await (window as any).electronAPI.dialog.selectFolder();
+      if (result.success && result.path) {
+        const updateResult = await (window as any).electronAPI.project.setBaseDir(result.path);
+        if (updateResult.success) {
+          setProjectsDir(result.path);
+          addToast({ type: 'success', title: 'Directory Updated', message: 'Projects directory has been changed' });
+        } else {
+          addToast({ type: 'error', title: 'Error', message: 'Failed to update directory' });
+        }
+      }
+    } catch (error) {
+      addToast({ type: 'error', title: 'Error', message: 'Failed to select directory' });
+    }
+  };
+
   const loadSettings = async () => {
     // In production, load from electron store
     const savedSettings = localStorage.getItem('settings');
@@ -203,8 +220,14 @@ function SettingsPage() {
               <span className="setting-label">Projects install directory</span>
               <span className="setting-description">Where projects are installed locally</span>
             </div>
-            <div className="setting-path">
-              <code>{projectsDir || 'Loading...'}</code>
+            <div className="setting-path-wrapper">
+              <div className="setting-path">
+                <code>{projectsDir || 'Loading...'}</code>
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={handleSelectProjectsDir}>
+                <Folder size={16} />
+                Change Directory
+              </button>
             </div>
           </div>
 

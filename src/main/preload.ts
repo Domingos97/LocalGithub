@@ -19,6 +19,9 @@ const api = {
     getConfig: (projectPath: string) => 
       ipcRenderer.invoke('project:getConfig', projectPath),
     getBaseDir: () => ipcRenderer.invoke('project:getBaseDir'),
+    setBaseDir: (newBaseDir: string) => ipcRenderer.invoke('project:setBaseDir', newBaseDir),
+    linkExisting: (localPath: string, repoUrl: string, repoName: string) => 
+      ipcRenderer.invoke('project:linkExisting', localPath, repoUrl, repoName),
     openInVSCode: (projectPath: string) => 
       ipcRenderer.invoke('project:openInVSCode', projectPath),
     uninstall: (repoName: string) => 
@@ -35,6 +38,10 @@ const api = {
     cloneRepository: (url: string, name: string) =>
       ipcRenderer.invoke('git:cloneRepository', url, name),
     getProjectPath: (name: string) => ipcRenderer.invoke('git:getProjectPath', name),
+    checkRemoteChanges: (repoName: string) => 
+      ipcRenderer.invoke('git:checkRemoteChanges', repoName),
+    pull: (repoName: string) => 
+      ipcRenderer.invoke('git:pull', repoName),
     onCloneProgress: (callback: (data: any) => void) => {
       ipcRenderer.on('git:cloneProgress', (_event, data) => callback(data));
     },
@@ -77,6 +84,11 @@ const api = {
     delete: (repoName: string, noteId: string) =>
       ipcRenderer.invoke('notes:delete', repoName, noteId),
     fetchFromRepo: (repoName: string) => ipcRenderer.invoke('notes:fetchFromRepo', repoName),
+  },
+
+  // Dialog APIs
+  dialog: {
+    selectFolder: () => ipcRenderer.invoke('dialog:selectFolder'),
   },
 };
 

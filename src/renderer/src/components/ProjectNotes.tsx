@@ -49,7 +49,21 @@ function ProjectNotes({ repoName }: ProjectNotesProps) {
       const result = await (window as any).electronAPI.notes.get(repoName);
       if (result.success) {
         const local = result.data.notes || [];
-        if (local.length > 0) {
+        const localRaw = result.data.rawContent;
+        
+        // Prioritize showing raw content if it exists
+        if (localRaw) {
+          setRawContent(localRaw);
+          setNotes([]);
+        } else if (local.length > 0 && !local.some((note: ProjectNote) => note.text.includes('\n') && note.text.length > 200)) {
+          // Only show as structured notes if they're actual notes (not raw file content)
+          setNotes(local);
+          setRawContent(null);
+        } else if (local.length === 1 && local[0].text.length > 100) {
+          // If there's a single long note, it's probably raw content
+          setRawContent(local[0].text);
+          setNotes([]);
+        } else if (local.length > 0) {
           setNotes(local);
           setRawContent(null);
         } else {

@@ -156,14 +156,18 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
   overflow: auto;
+  max-height: 600px;
+  min-height: 300px;
 }
 
 .raw-content {
   white-space: pre-wrap; /* preserve newlines and wrap long lines */
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Courier New', monospace;
   font-size: 0.875rem;
+  line-height: 1.6;
   color: var(--text-primary);
   margin: 0;
+  padding: 0.5rem;
 }
 
 .notes-empty {
