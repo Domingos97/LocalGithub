@@ -6,6 +6,7 @@ import { processManager } from './process-manager.js';
 import { gitOps, installer } from './git-operations.js';
 import { projectInstaller } from './project-installer.js';
 import { notesService } from './notes-service.js';
+import { projectGroupsService } from './project-groups-service.js';
 
 export function registerIpcHandlers() {
   // GitHub API Handlers
@@ -336,5 +337,87 @@ export function registerIpcHandlers() {
       return { success: false, canceled: true };
     }
     return { success: true, path: result.filePaths[0] };
+  });
+
+  // Project Groups Handlers
+  ipcMain.handle('groups:getAll', async () => {
+    try {
+      const groups = await projectGroupsService.getAllGroups();
+      return { success: true, data: groups };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('groups:get', async (_event, groupId: string) => {
+    try {
+      const group = await projectGroupsService.getGroup(groupId);
+      return { success: true, data: group };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('groups:create', async (_event, name: string, description?: string, color?: string) => {
+    try {
+      const group = await projectGroupsService.createGroup(name, description, color);
+      return { success: true, data: group };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('groups:update', async (_event, groupId: string, updates: any) => {
+    try {
+      const group = await projectGroupsService.updateGroup(groupId, updates);
+      return { success: true, data: group };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('groups:delete', async (_event, groupId: string) => {
+    try {
+      const success = await projectGroupsService.deleteGroup(groupId);
+      return { success };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('groups:addRepo', async (_event, groupId: string, repoName: string) => {
+    try {
+      const group = await projectGroupsService.addRepoToGroup(groupId, repoName);
+      return { success: true, data: group };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('groups:removeRepo', async (_event, groupId: string, repoName: string) => {
+    try {
+      const group = await projectGroupsService.removeRepoFromGroup(groupId, repoName);
+      return { success: true, data: group };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('groups:getForRepo', async (_event, repoName: string) => {
+    try {
+      const group = await projectGroupsService.getGroupForRepo(repoName);
+      return { success: true, data: group };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('groups:moveRepo', async (_event, repoName: string, targetGroupId: string) => {
+    try {
+      const group = await projectGroupsService.moveRepoToGroup(repoName, targetGroupId);
+      return { success: true, data: group };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
   });
 }

@@ -53,11 +53,6 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, l
   const [pulling, setPulling] = useState(false);
   const [linking, setLinking] = useState(false);
   
-  // Debug logging
-  if (isInstalled) {
-    console.log(`ProjectCard ${repo.name}:`, { isInstalled, hasRemoteChanges, behindCount, onPull: !!onPull });
-  }
-  
   const updatedDate = new Date(repo.updated_at);
   const now = new Date();
   const diffTime = Math.abs(now.getTime() - updatedDate.getTime());
@@ -81,7 +76,7 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, l
   const langColor = repo.language ? languageColors[repo.language] || '#6e7681' : '#6e7681';
 
   const handleInstallClick = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click
+    e.stopPropagation();
     if (!onInstall || installing || isInstalled) return;
     
     const cloneUrl = repo.clone_url || `https://github.com/${repo.full_name}.git`;
@@ -94,14 +89,14 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, l
   };
 
   const handleOpenInVSCode = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click
+    e.stopPropagation();
     if (onOpenInVSCode && localPath) {
       onOpenInVSCode(localPath);
     }
   };
 
   const handleUninstall = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click
+    e.stopPropagation();
     if (!onUninstall || uninstalling || !isInstalled) return;
     
     setUninstalling(true);
@@ -113,19 +108,21 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, l
   };
 
   const handlePull = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click
-    if (!onPull || pulling || !isInstalled) return;
+    e.stopPropagation();
+    if (pulling || !isInstalled) return;
     
     setPulling(true);
     try {
-      await onPull(repo.name);
+      if (onPull) {
+        await onPull(repo.name);
+      }
     } finally {
       setPulling(false);
     }
   };
 
   const handleLinkExisting = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent card click
+    e.stopPropagation();
     if (!onLinkExisting || linking || isInstalled) return;
     
     const cloneUrl = repo.clone_url || `https://github.com/${repo.full_name}.git`;
@@ -146,13 +143,13 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, l
             {isInstalled && hasRemoteChanges && (
               <span className="remote-changes-badge" title={`${behindCount} commit(s) behind`}>
                 <AlertCircle size={12} />
-                Update Available
+                Update
               </span>
             )}
             {isInstalled && hasRemoteChanges === false && (
               <span className="up-to-date-badge" title="Local repository is up to date">
                 <Check size={12} />
-                Up to Date
+                Updated
               </span>
             )}
             {isInstalled && (
@@ -173,7 +170,7 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, l
         {repo.description || 'No description available'}
       </p>
 
-      <div className="card-footer">
+      <div className="card-meta">
         <div className="card-stats">
           {repo.language && (
             <span className="stat-item language">
@@ -191,126 +188,110 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, l
               {repo.forks_count}
             </span>
           )}
-        </div>
-        <div className="card-actions">
-          <span className="updated-time">
+          <span className="stat-item updated-time">
             <Clock size={12} />
             {timeAgo}
           </span>
-          {isInstalled && onPull && (
+        </div>
+      </div>
+
+      <div className="card-actions">
+        {/* Primary Actions */}
+        {!isInstalled && onInstall && (
+          <>
             <button
-              className={`pull-btn ${hasRemoteChanges ? 'has-updates' : ''} ${pulling ? 'pulling' : ''}`}
-              onClick={handlePull}
-              disabled={pulling}
-              title={hasRemoteChanges ? `Pull ${behindCount} commit(s) from remote` : 'Check for updates and pull if available'}
-            >
-              {pulling ? (
-                <>
-                  <Loader size={14} className="spin" />
-                  Pulling...
-                </>
-              ) : hasRemoteChanges ? (
-                <>
-                  <GitPullRequest size={14} />
-                  Pull Changes
-                </>
-              ) : (
-                <>
-                  <GitPullRequest size={14} />
-                  Sync
-                </>
-              )}
-            </button>
-          )}
-          {isInstalled && localPath && onOpenInVSCode && (
-            <button
-              className="vscode-btn"
-              onClick={handleOpenInVSCode}
-              title="Open in Visual Studio Code"
-            >
-              <Code size={14} />
-              Open in VS Code
-            </button>
-          )}
-          {isInstalled && onUninstall && (
-            <button
-              className={`uninstall-btn ${uninstalling ? 'uninstalling' : ''}`}
-              onClick={handleUninstall}
-              disabled={uninstalling}
-              title="Uninstall project"
-            >
-              {uninstalling ? (
-                <>
-                  <Loader size={14} className="spin" />
-                  Removing...
-                </>
-              ) : (
-                <>
-                  <Trash2 size={14} />
-                  Uninstall
-                </>
-              )}
-            </button>
-          )}
-          {onInstall && (
-            <button
-              className={`install-btn ${isInstalled ? 'installed' : ''} ${installing ? 'installing' : ''}`}
+              className={`btn btn-primary ${installing ? 'loading' : ''}`}
               onClick={handleInstallClick}
-              disabled={installing || isInstalled}
-              title={isInstalled ? 'Already installed' : 'Install project locally'}
+              disabled={installing}
+              title="Install project locally"
             >
               {installing ? (
                 <>
                   <Loader size={14} className="spin" />
-                  Installing...
-                </>
-              ) : isInstalled ? (
-                <>
-                  <Check size={14} />
-                  Installed
+                  <span>Installing...</span>
                 </>
               ) : (
                 <>
                   <Download size={14} />
-                  Install
+                  <span>Install</span>
                 </>
               )}
             </button>
-          )}
-          {onInstall && !isInstalled && onLinkExisting && (
+            {onLinkExisting && (
+              <button
+                className={`btn btn-secondary ${linking ? 'loading' : ''}`}
+                onClick={handleLinkExisting}
+                disabled={linking}
+                title="Link an existing local folder"
+              >
+                {linking ? (
+                  <>
+                    <Loader size={14} className="spin" />
+                    <span>Linking...</span>
+                  </>
+                ) : (
+                  <>
+                    <Link size={14} />
+                    <span>Link</span>
+                  </>
+                )}
+              </button>
+            )}
+          </>
+        )}
+
+        {isInstalled && (
+          <>
+            {localPath && onOpenInVSCode && (
+              <button
+                className="btn btn-primary"
+                onClick={handleOpenInVSCode}
+                title="Open in Visual Studio Code"
+              >
+                <Code size={14} />
+                <span>Open in VS Code</span>
+              </button>
+            )}
             <button
-              className={`link-btn ${linking ? 'linking' : ''}`}
-              onClick={handleLinkExisting}
-              disabled={linking}
-              title="Link an existing local folder to this repository"
+              className={`btn btn-secondary ${hasRemoteChanges ? 'btn-warning' : ''} ${pulling ? 'loading' : ''}`}
+              onClick={handlePull}
+              disabled={pulling}
+              title={hasRemoteChanges ? `Pull ${behindCount} commit(s) from remote` : 'Pull latest changes'}
             >
-              {linking ? (
+              {pulling ? (
                 <>
                   <Loader size={14} className="spin" />
-                  Linking...
+                  <span>Pulling...</span>
                 </>
               ) : (
                 <>
-                  <Link size={14} />
-                  Link Existing
+                  <GitPullRequest size={14} />
+                  <span>{hasRemoteChanges ? `Pull (${behindCount})` : 'Pull'}</span>
                 </>
               )}
             </button>
-          )}
-              ) : isInstalled ? (
-                <>
-                  <Check size={14} />
-                  Installed
-                </>
-              ) : (
-                <>
-                  <Download size={14} />
-                  Install
-                </>
-              )}
-            </button>
-          )}
-        </div>
+            {onUninstall && (
+              <button
+                className={`btn btn-danger ${uninstalling ? 'loading' : ''}`}
+                onClick={handleUninstall}
+                disabled={uninstalling}
+                title="Uninstall project"
+              >
+                {uninstalling ? (
+                  <>
+                    <Loader size={14} className="spin" />
+                    <span>Removing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Uninstall</span>
+                  </>
+                )}
+              </button>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

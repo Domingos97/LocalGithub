@@ -90,6 +90,25 @@ const api = {
   dialog: {
     selectFolder: () => ipcRenderer.invoke('dialog:selectFolder'),
   },
+
+  // Project Groups Management
+  groups: {
+    getAll: () => ipcRenderer.invoke('groups:getAll'),
+    get: (groupId: string) => ipcRenderer.invoke('groups:get', groupId),
+    create: (name: string, description?: string, color?: string) => 
+      ipcRenderer.invoke('groups:create', name, description, color),
+    update: (groupId: string, updates: any) => 
+      ipcRenderer.invoke('groups:update', groupId, updates),
+    delete: (groupId: string) => ipcRenderer.invoke('groups:delete', groupId),
+    addRepo: (groupId: string, repoName: string) => 
+      ipcRenderer.invoke('groups:addRepo', groupId, repoName),
+    removeRepo: (groupId: string, repoName: string) => 
+      ipcRenderer.invoke('groups:removeRepo', groupId, repoName),
+    getForRepo: (repoName: string) => 
+      ipcRenderer.invoke('groups:getForRepo', repoName),
+    moveRepo: (repoName: string, targetGroupId: string) => 
+      ipcRenderer.invoke('groups:moveRepo', repoName, targetGroupId),
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

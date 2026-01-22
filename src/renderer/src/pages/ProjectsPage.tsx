@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, RefreshCw, FolderGit2, AlertCircle } from 'lucide-react';
+import { Search, Filter, RefreshCw, FolderGit2, AlertCircle, Folder, FolderOpen } from 'lucide-react';
 import ProjectCard from '../components/ProjectCard';
+import ProjectGroupsModal from '../components/ProjectGroupsModal';
 import Spinner from '../components/Spinner';
 import { useToast } from '../components/Toast';
 import '../styles/Projects.css';
@@ -20,6 +21,16 @@ interface Repository {
   private: boolean;
 }
 
+interface ProjectGroup {
+  id: string;
+  name: string;
+  description?: string;
+  color?: string;
+  repoNames: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 function ProjectsPage() {
   const [repos, setRepos] = useState<Repository[]>([]);
   const [filteredRepos, setFilteredRepos] = useState<Repository[]>([]);
@@ -30,16 +41,31 @@ function ProjectsPage() {
   const [installedProjects, setInstalledProjects] = useState<Set<string>>(new Set());
   const [projectPaths, setProjectPaths] = useState<Record<string, string>>({});
   const [remoteChanges, setRemoteChanges] = useState<Record<string, { hasChanges: boolean; behindCount: number }>>({});
+  const [groups, setGroups] = useState<ProjectGroup[]>([]);
+  const [showGroupsModal, setShowGroupsModal] = useState(false);
+  const [viewMode, setViewMode] = useState<'all' | 'grouped'>('all');
   const navigate = useNavigate();
   const { addToast } = useToast();
 
   useEffect(() => {
     loadRepositories();
+    loadGroups();
   }, []);
 
   useEffect(() => {
     filterRepositories();
   }, [repos, searchTerm, languageFilter]);
+
+  const loadGroups = async () => {
+    try {
+      const result = await (window as any).electronAPI.groups.getAll();
+      if (result.success) {
+        setGroups(result.data || []);
+      }
+    } catch (error) {
+      console.error('Error loading groups:', error);
+    }
+  };
 
   const loadRepositories = async () => {
     try {
@@ -303,6 +329,7 @@ function ProjectsPage() {
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadRepositories();
+    await loadGroups();
     setRefreshing(false);
   };
 
@@ -327,6 +354,32 @@ function ProjectsPage() {
   };
 
   const languages = ['all', ...new Set(repos.map((r) => r.language).filter((l): l is string => l !== null))];
+
+  const getGroupedRepos = () => {
+    const grouped: Record<string, Repository[]> = {};
+    const ungrouped: Repository[] = [];
+
+    // Get all repo names that are in groups
+    const groupedRepoNames = new Set<string>();
+    groups.forEach(group => {
+      group.repoNames.forEach(name => groupedRepoNames.add(name));
+    });
+
+    // Organize repos by group
+    filteredRepos.forEach(repo => {
+      const group = groups.find(g => g.repoNames.includes(repo.name));
+      if (group) {
+        if (!grouped[group.id]) {
+          grouped[group.id] = [];
+        }
+        grouped[group.id].push(repo);
+      } else {
+        ungrouped.push(repo);
+      }
+    });
+
+    return { grouped, ungrouped };
+  };
 
   if (loading) {
     return (
@@ -375,6 +428,33 @@ function ProjectsPage() {
           </select>
         </div>
 
+        <div className="view-mode-toggle">
+          <button
+            className={`view-mode-btn ${viewMode === 'all' ? 'active' : ''}`}
+            onClick={() => setViewMode('all')}
+            title="Show all repositories"
+          >
+            <FolderOpen size={16} />
+            All
+          </button>
+          <button
+            className={`view-mode-btn ${viewMode === 'grouped' ? 'active' : ''}`}
+            onClick={() => setViewMode('grouped')}
+            title="Show grouped repositories"
+          >
+            <Folder size={16} />
+            Grouped
+          </button>
+        </div>
+
+        <button 
+          className="btn btn-secondary"
+          onClick={() => setShowGroupsModal(true)}
+        >
+          <Folder size={16} />
+          Manage Groups
+        </button>
+
         <button 
           className={`btn btn-secondary ${refreshing ? 'refreshing' : ''}`}
           onClick={handleRefresh}
@@ -385,27 +465,113 @@ function ProjectsPage() {
         </button>
       </div>
 
-      {/* Projects Grid */}
+      {/* Projects Display */}
       {filteredRepos.length > 0 ? (
-        <div className="projects-grid">
-          {filteredRepos.map((repo, index) => (
-            <ProjectCard
-              key={repo.id}
-              repo={repo}
-              onSelect={() => navigate(`/projects/${repo.name}`)}
-              isInstalled={installedProjects.has(repo.name)}
-              onInstall={handleInstall}
-              onLinkExisting={handleLinkExisting}
-              localPath={projectPaths[repo.name]}
-              onOpenInVSCode={handleOpenInVSCode}
-              onUninstall={handleUninstall}
-              hasRemoteChanges={remoteChanges[repo.name]?.hasChanges}
-              behindCount={remoteChanges[repo.name]?.behindCount}
-              onPull={handlePull}
-              style={{ animationDelay: `${index * 0.05}s` }}
-            />
-          ))}
-        </div>
+        viewMode === 'all' ? (
+          <div className="projects-grid">
+            {filteredRepos.map((repo, index) => (
+              <ProjectCard
+                key={repo.id}
+                repo={repo}
+                onSelect={() => navigate(`/projects/${repo.name}`)}
+                isInstalled={installedProjects.has(repo.name)}
+                onInstall={handleInstall}
+                onLinkExisting={handleLinkExisting}
+                localPath={projectPaths[repo.name]}
+                onOpenInVSCode={handleOpenInVSCode}
+                onUninstall={handleUninstall}
+                hasRemoteChanges={remoteChanges[repo.name]?.hasChanges}
+                behindCount={remoteChanges[repo.name]?.behindCount}
+                onPull={handlePull}
+                style={{ animationDelay: `${index * 0.05}s` }}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="grouped-projects-view">
+            {(() => {
+              const { grouped, ungrouped } = getGroupedRepos();
+              return (
+                <>
+                  {/* Render each group */}
+                  {groups.map(group => {
+                    const groupRepos = grouped[group.id] || [];
+                    if (groupRepos.length === 0) return null;
+                    
+                    return (
+                      <div key={group.id} className="project-group">
+                        <div className="group-header">
+                          <div className="group-title">
+                            <div 
+                              className="group-color-indicator" 
+                              style={{ backgroundColor: group.color }}
+                            />
+                            <h2>{group.name}</h2>
+                            {group.description && (
+                              <span className="group-description">{group.description}</span>
+                            )}
+                          </div>
+                          <span className="group-count">{groupRepos.length} {groupRepos.length === 1 ? 'repo' : 'repos'}</span>
+                        </div>
+                        <div className="projects-grid">
+                          {groupRepos.map((repo, index) => (
+                            <ProjectCard
+                              key={repo.id}
+                              repo={repo}
+                              onSelect={() => navigate(`/projects/${repo.name}`)}
+                              isInstalled={installedProjects.has(repo.name)}
+                              onInstall={handleInstall}
+                              onLinkExisting={handleLinkExisting}
+                              localPath={projectPaths[repo.name]}
+                              onOpenInVSCode={handleOpenInVSCode}
+                              onUninstall={handleUninstall}
+                              hasRemoteChanges={remoteChanges[repo.name]?.hasChanges}
+                              behindCount={remoteChanges[repo.name]?.behindCount}
+                              onPull={handlePull}
+                              style={{ animationDelay: `${index * 0.05}s` }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Ungrouped repos */}
+                  {ungrouped.length > 0 && (
+                    <div className="project-group ungrouped">
+                      <div className="group-header">
+                        <div className="group-title">
+                          <div className="group-color-indicator" style={{ backgroundColor: '#666' }} />
+                          <h2>Ungrouped</h2>
+                        </div>
+                        <span className="group-count">{ungrouped.length} {ungrouped.length === 1 ? 'repo' : 'repos'}</span>
+                      </div>
+                      <div className="projects-grid">
+                        {ungrouped.map((repo, index) => (
+                          <ProjectCard
+                            key={repo.id}
+                            repo={repo}
+                            onSelect={() => navigate(`/projects/${repo.name}`)}
+                            isInstalled={installedProjects.has(repo.name)}
+                            onInstall={handleInstall}
+                            onLinkExisting={handleLinkExisting}
+                            localPath={projectPaths[repo.name]}
+                            onOpenInVSCode={handleOpenInVSCode}
+                            onUninstall={handleUninstall}
+                            hasRemoteChanges={remoteChanges[repo.name]?.hasChanges}
+                            behindCount={remoteChanges[repo.name]?.behindCount}
+                            onPull={handlePull}
+                            style={{ animationDelay: `${index * 0.05}s` }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )
       ) : (
         <div className="no-results">
           <div className="no-results-icon">
@@ -434,6 +600,16 @@ function ProjectsPage() {
           )}
         </div>
       )}
+
+      {/* Project Groups Modal */}
+      <ProjectGroupsModal
+        isOpen={showGroupsModal}
+        onClose={() => setShowGroupsModal(false)}
+        repositories={repos}
+        onGroupsChanged={() => {
+          loadGroups();
+        }}
+      />
     </div>
   );
 }
