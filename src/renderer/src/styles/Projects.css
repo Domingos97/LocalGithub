@@ -168,6 +168,15 @@
   opacity: 0.9;
 }
 
+.project-group.owner-group .group-color-indicator.owner-indicator {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.owner-grouped-view .group-title h2 {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+}
+
 .group-header {
   display: flex;
   justify-content: space-between;

@@ -22,6 +22,10 @@ const api = {
     setBaseDir: (newBaseDir: string) => ipcRenderer.invoke('project:setBaseDir', newBaseDir),
     linkExisting: (localPath: string, repoUrl: string, repoName: string) => 
       ipcRenderer.invoke('project:linkExisting', localPath, repoUrl, repoName),
+    changeLink: (repoName: string, newLocalPath: string) => 
+      ipcRenderer.invoke('project:changeLink', repoName, newLocalPath),
+    removeLink: (repoName: string) => 
+      ipcRenderer.invoke('project:removeLink', repoName),
     openInVSCode: (projectPath: string) => 
       ipcRenderer.invoke('project:openInVSCode', projectPath),
     uninstall: (repoName: string) => 
@@ -89,6 +93,7 @@ const api = {
   // Dialog APIs
   dialog: {
     selectFolder: () => ipcRenderer.invoke('dialog:selectFolder'),
+    showOpenDialog: (options: any) => ipcRenderer.invoke('dialog:showOpenDialog', options),
   },
 
   // Project Groups Management

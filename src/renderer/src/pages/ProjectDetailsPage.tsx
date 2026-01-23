@@ -17,6 +17,8 @@ import {
   RefreshCw,
   FileCode,
   Trash2,
+  Link2,
+  Unlink,
 } from 'lucide-react';
 import ProgressBar from '../components/ProgressBar';
 import TerminalOutput from '../components/TerminalOutput';
@@ -259,6 +261,57 @@ function ProjectDetailsPage() {
     }
   };
 
+  const handleChangeLink = async () => {
+    if (!repo) return;
+    try {
+      // Use Electron's dialog to select a folder
+      const result = await (window as any).electronAPI.dialog.showOpenDialog({
+        properties: ['openDirectory'],
+        title: 'Select Project Folder',
+        buttonLabel: 'Select Folder'
+      });
+
+      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+        return;
+      }
+
+      const newPath = result.filePaths[0];
+      const changeLinkResult = await (window as any).electronAPI.project.changeLink(repo.name, newPath);
+      
+      if (changeLinkResult.success) {
+        setProjectState(prev => ({ ...prev, localPath: newPath }));
+        addToast({ type: 'success', title: 'Link Changed', message: changeLinkResult.message });
+      } else {
+        addToast({ type: 'error', title: 'Failed to Change Link', message: changeLinkResult.message });
+      }
+    } catch (error) {
+      console.error('Error changing link:', error);
+      addToast({ type: 'error', title: 'Error', message: 'Failed to change folder link' });
+    }
+  };
+
+  const handleRemoveLink = async () => {
+    if (!repo) return;
+    
+    if (!confirm(`Are you sure you want to unlink ${repo.name}? The folder will not be deleted.`)) {
+      return;
+    }
+
+    try {
+      const result = await (window as any).electronAPI.project.removeLink(repo.name);
+      
+      if (result.success) {
+        setProjectState({ isInstalled: false, isRunning: false });
+        addToast({ type: 'success', title: 'Link Removed', message: result.message });
+      } else {
+        addToast({ type: 'error', title: 'Failed to Remove Link', message: result.message });
+      }
+    } catch (error) {
+      console.error('Error removing link:', error);
+      addToast({ type: 'error', title: 'Error', message: 'Failed to remove folder link' });
+    }
+  };
+
   const formatSize = (kb: number) => {
     if (kb < 1024) return `${kb} KB`;
     return `${(kb / 1024).toFixed(1)} MB`;
@@ -310,10 +363,20 @@ function ProjectDetailsPage() {
         </div>
         <div className="header-actions">
           {projectState.isInstalled && projectState.localPath && (
-            <button className="btn btn-vscode" onClick={handleOpenInVSCode}>
-              <FileCode size={16} />
-              Open in VS Code
-            </button>
+            <>
+              <button className="btn btn-vscode" onClick={handleOpenInVSCode}>
+                <FileCode size={16} />
+                Open in VS Code
+              </button>
+              <button className="btn btn-secondary" onClick={handleChangeLink} title="Change folder link">
+                <Link2 size={16} />
+                Change Link
+              </button>
+              <button className="btn btn-ghost" onClick={handleRemoveLink} title="Remove folder link (keeps folder)">
+                <Unlink size={16} />
+                Unlink
+              </button>
+            </>
           )}
           {projectState.isInstalled && (
             <button className="btn btn-danger-outline" onClick={handleUninstall}>

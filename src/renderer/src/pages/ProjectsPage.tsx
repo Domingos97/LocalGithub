@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, RefreshCw, FolderGit2, AlertCircle, Folder, FolderOpen } from 'lucide-react';
 import ProjectCard from '../components/ProjectCard';
@@ -33,9 +33,9 @@ interface ProjectGroup {
 
 function ProjectsPage() {
   const [repos, setRepos] = useState<Repository[]>([]);
-  const [filteredRepos, setFilteredRepos] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [languageFilter, setLanguageFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
   const [installedProjects, setInstalledProjects] = useState<Set<string>>(new Set());
@@ -43,7 +43,7 @@ function ProjectsPage() {
   const [remoteChanges, setRemoteChanges] = useState<Record<string, { hasChanges: boolean; behindCount: number }>>({});
   const [groups, setGroups] = useState<ProjectGroup[]>([]);
   const [showGroupsModal, setShowGroupsModal] = useState(false);
-  const [viewMode, setViewMode] = useState<'all' | 'grouped'>('all');
+  const [viewMode, setViewMode] = useState<'all' | 'grouped' | 'by-owner'>('all');
   const navigate = useNavigate();
   const { addToast } = useToast();
 
@@ -52,9 +52,13 @@ function ProjectsPage() {
     loadGroups();
   }, []);
 
+  // Debounce search term
   useEffect(() => {
-    filterRepositories();
-  }, [repos, searchTerm, languageFilter]);
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   const loadGroups = async () => {
     try {
@@ -88,42 +92,94 @@ function ProjectsPage() {
   const checkInstalledProjects = async (repositories: Repository[]) => {
     const installed = new Set<string>();
     const paths: Record<string, string> = {};
-    const changes: Record<string, { hasChanges: boolean; behindCount: number }> = {};
     
-    for (const repo of repositories) {
-      try {
-        const result = await (window as any).electronAPI.project.isInstalled(repo.name);
-        if (result.success && result.data.installed) {
-          installed.add(repo.name);
-          // Get the project path
-          const pathResult = await (window as any).electronAPI.git.getProjectPath(repo.name);
-          if (pathResult.success) {
-            paths[repo.name] = pathResult.data.projectPath;
-          }
-          
-          // Check for remote changes
-          try {
-            const changesResult = await (window as any).electronAPI.git.checkRemoteChanges(repo.name);
-            if (changesResult.success) {
-              changes[repo.name] = {
-                hasChanges: changesResult.data.hasChanges,
-                behindCount: changesResult.data.behind
-              };
+    try {
+      // Use batch check API - single call for all repos
+      const result = await (window as any).electronAPI.project.batchCheck(
+        repositories.map(r => r.name)
+      );
+      
+      if (result.success) {
+        result.data.forEach((item: any) => {
+          if (item.installed) {
+            installed.add(item.name);
+            if (item.path) {
+              paths[item.name] = item.path;
             }
-          } catch (error) {
-            // Silently ignore errors checking for remote changes
-            console.warn(`Failed to check remote changes for ${repo.name}:`, error);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Batch check error:', error);
+      // Fallback to individual checks if batch fails
+      const results = await Promise.allSettled(
+        repositories.map(async (repo) => {
+          const result = await (window as any).electronAPI.project.isInstalled(repo.name);
+          if (result.success && result.data.installed) {
+            const pathResult = await (window as any).electronAPI.git.getProjectPath(repo.name);
+            return {
+              name: repo.name,
+              path: pathResult.success ? pathResult.data.projectPath : null
+            };
+          }
+          return null;
+        })
+      );
+      
+      results.forEach((result) => {
+        if (result.status === 'fulfilled' && result.value) {
+          installed.add(result.value.name);
+          if (result.value.path) {
+            paths[result.value.name] = result.value.path;
           }
         }
-      } catch (error) {
-        // Ignore errors for individual checks
-      }
+      });
     }
+    
     setInstalledProjects(installed);
     setProjectPaths(paths);
-    setRemoteChanges(changes);
+    
+    // Check for remote changes in background (non-blocking)
+    // Only check installed projects
+    if (installed.size > 0) {
+      checkRemoteChangesInBackground(Array.from(installed));
+    }
+    
     console.log('Installed projects:', installed);
-    console.log('Remote changes:', changes);
+  };
+  
+  const checkRemoteChangesInBackground = async (installedRepoNames: string[]) => {
+    // Run in background without blocking UI
+    const results = await Promise.allSettled(
+      installedRepoNames.map(async (repoName) => {
+        try {
+          const changesResult = await (window as any).electronAPI.git.checkRemoteChanges(repoName);
+          if (changesResult.success) {
+            return {
+              name: repoName,
+              hasChanges: changesResult.data.hasChanges,
+              behindCount: changesResult.data.behind
+            };
+          }
+        } catch (error) {
+          console.warn(`Failed to check remote changes for ${repoName}:`, error);
+        }
+        return null;
+      })
+    );
+    
+    const newChanges: Record<string, { hasChanges: boolean; behindCount: number }> = {};
+    results.forEach((result) => {
+      if (result.status === 'fulfilled' && result.value) {
+        newChanges[result.value.name] = {
+          hasChanges: result.value.hasChanges,
+          behindCount: result.value.behindCount
+        };
+      }
+    });
+    
+    setRemoteChanges(newChanges);
+    console.log('Remote changes:', newChanges);
   };
 
   const handleInstall = async (repoUrl: string, repoName: string) => {
@@ -326,6 +382,52 @@ function ProjectsPage() {
     }
   };
 
+  const handleChangeLocation = async (repoName: string) => {
+    try {
+      // Open folder picker
+      const result = await (window as any).electronAPI.dialog.showOpenDialog({
+        properties: ['openDirectory'],
+        title: 'Select New Project Folder',
+        buttonLabel: 'Select Folder'
+      });
+
+      if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+        return;
+      }
+
+      const newPath = result.filePaths[0];
+      
+      addToast({ 
+        type: 'info', 
+        title: 'Changing Location', 
+        message: `Changing location for ${repoName}...` 
+      });
+
+      const changeLinkResult = await (window as any).electronAPI.project.changeLink(repoName, newPath);
+      
+      if (changeLinkResult.success) {
+        setProjectPaths(prev => ({ ...prev, [repoName]: newPath }));
+        addToast({ 
+          type: 'success', 
+          title: 'Location Changed', 
+          message: changeLinkResult.message 
+        });
+      } else {
+        addToast({ 
+          type: 'error', 
+          title: 'Failed to Change Location', 
+          message: changeLinkResult.message || 'Unknown error occurred'
+        });
+      }
+    } catch (error) {
+      addToast({ 
+        type: 'error', 
+        title: 'Error', 
+        message: 'Failed to change folder location' 
+      });
+    }
+  };
+
   const handleRefresh = async () => {
     setRefreshing(true);
     await loadRepositories();
@@ -333,15 +435,17 @@ function ProjectsPage() {
     setRefreshing(false);
   };
 
-  const filterRepositories = () => {
+  // Memoized filtered repositories - only recalculate when dependencies change
+  const filteredRepos = useMemo(() => {
     let filtered = repos;
 
-    // Filter by search term
-    if (searchTerm) {
+    // Filter by search term (debounced)
+    if (debouncedSearchTerm) {
+      const searchLower = debouncedSearchTerm.toLowerCase();
       filtered = filtered.filter(
         (repo) =>
-          repo.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (repo.description?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false)
+          repo.name.toLowerCase().includes(searchLower) ||
+          (repo.description?.toLowerCase().includes(searchLower) ?? false)
       );
     }
 
@@ -350,12 +454,17 @@ function ProjectsPage() {
       filtered = filtered.filter((repo) => repo.language === languageFilter);
     }
 
-    setFilteredRepos(filtered);
-  };
+    return filtered;
+  }, [repos, debouncedSearchTerm, languageFilter]);
 
-  const languages = ['all', ...new Set(repos.map((r) => r.language).filter((l): l is string => l !== null))];
+  // Memoize language list calculation
+  const languages = useMemo(() => 
+    ['all', ...new Set(repos.map((r) => r.language).filter((l): l is string => l !== null))],
+    [repos]
+  );
 
-  const getGroupedRepos = () => {
+  // Memoize grouped repos calculation
+  const getGroupedRepos = useMemo(() => {
     const grouped: Record<string, Repository[]> = {};
     const ungrouped: Repository[] = [];
 
@@ -379,7 +488,28 @@ function ProjectsPage() {
     });
 
     return { grouped, ungrouped };
-  };
+  }, [filteredRepos, groups]);
+
+  // Memoize repos grouped by owner
+  const getReposByOwner = useMemo(() => {
+    const byOwner: Record<string, Repository[]> = {};
+    
+    filteredRepos.forEach(repo => {
+      const owner = repo.full_name.split('/')[0];
+      if (!byOwner[owner]) {
+        byOwner[owner] = [];
+      }
+      byOwner[owner].push(repo);
+    });
+    
+    // Sort owners alphabetically
+    return Object.keys(byOwner)
+      .sort()
+      .reduce((acc, owner) => {
+        acc[owner] = byOwner[owner];
+        return acc;
+      }, {} as Record<string, Repository[]>);
+  }, [filteredRepos]);
 
   if (loading) {
     return (
@@ -445,6 +575,14 @@ function ProjectsPage() {
             <Folder size={16} />
             Grouped
           </button>
+          <button
+            className={`view-mode-btn ${viewMode === 'by-owner' ? 'active' : ''}`}
+            onClick={() => setViewMode('by-owner')}
+            title="Group by repository owner"
+          >
+            <FolderGit2 size={16} />
+            By Owner
+          </button>
         </div>
 
         <button 
@@ -483,14 +621,47 @@ function ProjectsPage() {
                 hasRemoteChanges={remoteChanges[repo.name]?.hasChanges}
                 behindCount={remoteChanges[repo.name]?.behindCount}
                 onPull={handlePull}
+                onChangeLocation={handleChangeLocation}
                 style={{ animationDelay: `${index * 0.05}s` }}
               />
+          <div className="grouped-projects-view owner-grouped-view">
+            {Object.entries(getReposByOwner).map(([owner, ownerRepos]) => (
+              <div key={owner} className="project-group owner-group">
+                <div className="group-header">
+                  <div className="group-title">
+                    <div className="group-color-indicator owner-indicator" />
+                    <h2>{owner}</h2>
+                    <span className="group-description">Repository Owner</span>
+                  </div>
+                  <span className="group-count">{ownerRepos.length} {ownerRepos.length === 1 ? 'repo' : 'repos'}</span>
+                </div>
+                <div className="projects-grid">
+                  {ownerRepos.map((repo, index) => (
+                    <ProjectCard
+                      key={repo.id}
+                      repo={repo}
+                      onSelect={() => navigate(`/projects/${repo.name}`)}
+                      isInstalled={installedProjects.has(repo.name)}
+                      onInstall={handleInstall}
+                      onLinkExisting={handleLinkExisting}
+                      localPath={projectPaths[repo.name]}
+                      onOpenInVSCode={handleOpenInVSCode}
+                      onUninstall={handleUninstall}
+                      hasRemoteChanges={remoteChanges[repo.name]?.hasChanges}
+                      behindCount={remoteChanges[repo.name]?.behindCount}
+                      onPull={handlePull}
+                      onChangeLocation={handleChangeLocation}
+                      style={{ animationDelay: `${index * 0.05}s` }}
+                    />
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         ) : (
           <div className="grouped-projects-view">
             {(() => {
-              const { grouped, ungrouped } = getGroupedRepos();
+              const { grouped, ungrouped } = getGroupedRepos;
               return (
                 <>
                   {/* Render each group */}
@@ -528,6 +699,7 @@ function ProjectsPage() {
                               hasRemoteChanges={remoteChanges[repo.name]?.hasChanges}
                               behindCount={remoteChanges[repo.name]?.behindCount}
                               onPull={handlePull}
+                              onChangeLocation={handleChangeLocation}
                               style={{ animationDelay: `${index * 0.05}s` }}
                             />
                           ))}
@@ -561,6 +733,7 @@ function ProjectsPage() {
                             hasRemoteChanges={remoteChanges[repo.name]?.hasChanges}
                             behindCount={remoteChanges[repo.name]?.behindCount}
                             onPull={handlePull}
+                            onChangeLocation={handleChangeLocation}
                             style={{ animationDelay: `${index * 0.05}s` }}
                           />
                         ))}

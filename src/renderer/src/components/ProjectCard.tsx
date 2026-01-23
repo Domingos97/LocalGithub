@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Star, GitFork, Clock, Lock, Globe, Download, Check, Loader, Code, Trash2, GitPullRequest, AlertCircle, Link } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Star, GitFork, Clock, Lock, Globe, Download, Check, Loader, Code, Trash2, GitPullRequest, AlertCircle, Link, User, FolderEdit, Folder } from 'lucide-react';
 import '../styles/ProjectCard.css';
 
 interface ProjectCardProps {
@@ -26,6 +26,7 @@ interface ProjectCardProps {
   hasRemoteChanges?: boolean;
   behindCount?: number;
   onPull?: (repoName: string) => Promise<void>;
+  onChangeLocation?: (repoName: string) => Promise<void>;
 }
 
 const languageColors: Record<string, string> = {
@@ -47,33 +48,48 @@ const languageColors: Record<string, string> = {
   Dart: '#00B4AB',
 };
 
-function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, localPath, onOpenInVSCode, onUninstall, style, hasRemoteChanges, behindCount, onPull }: ProjectCardProps) {
+function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, localPath, onOpenInVSCode, onUninstall, style, hasRemoteChanges, behindCount, onPull, onChangeLocation }: ProjectCardProps) {
   const [installing, setInstalling] = useState(false);
   const [uninstalling, setUninstalling] = useState(false);
   const [pulling, setPulling] = useState(false);
   const [linking, setLinking] = useState(false);
+  const [changingLocation, setChangingLocation] = useState(false);
   
-  const updatedDate = new Date(repo.updated_at);
-  const now = new Date();
-  const diffTime = Math.abs(now.getTime() - updatedDate.getTime());
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  // Extract owner from full_name (e.g., "ebywater/Cubular_Frontend")
+  const owner = useMemo(() => {
+    if (repo.full_name) {
+      return repo.full_name.split('/')[0];
+    }
+    return null;
+  }, [repo.full_name]);
   
-  let timeAgo: string;
-  if (diffDays === 0) {
-    timeAgo = 'Today';
-  } else if (diffDays === 1) {
-    timeAgo = 'Yesterday';
-  } else if (diffDays < 7) {
-    timeAgo = `${diffDays} days ago`;
-  } else if (diffDays < 30) {
-    timeAgo = `${Math.floor(diffDays / 7)} weeks ago`;
-  } else if (diffDays < 365) {
-    timeAgo = `${Math.floor(diffDays / 30)} months ago`;
-  } else {
-    timeAgo = `${Math.floor(diffDays / 365)} years ago`;
-  }
+  // Memoize expensive date calculations
+  const timeAgo = useMemo(() => {
+    const updatedDate = new Date(repo.updated_at);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - updatedDate.getTime());
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) {
+      return 'Today';
+    } else if (diffDays === 1) {
+      return 'Yesterday';
+    } else if (diffDays < 7) {
+      return `${diffDays} days ago`;
+    } else if (diffDays < 30) {
+      return `${Math.floor(diffDays / 7)} weeks ago`;
+    } else if (diffDays < 365) {
+      return `${Math.floor(diffDays / 30)} months ago`;
+    } else {
+      return `${Math.floor(diffDays / 365)} years ago`;
+    }
+  }, [repo.updated_at]);
 
-  const langColor = repo.language ? languageColors[repo.language] || '#6e7681' : '#6e7681';
+  // Memoize language color lookup
+  const langColor = useMemo(() => 
+    repo.language ? languageColors[repo.language] || '#6e7681' : '#6e7681',
+    [repo.language]
+  );
 
   const handleInstallClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -134,12 +150,30 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, l
     }
   };
 
+  const handleChangeLocation = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onChangeLocation || changingLocation || !isInstalled) return;
+    
+    setChangingLocation(true);
+    try {
+      await onChangeLocation(repo.name);
+    } finally {
+      setChangingLocation(false);
+    }
+  };
+
   return (
     <div className="project-card animate-slideUp" onClick={onSelect} style={style}>
       <div className="card-header">
         <div className="card-title-row">
           <h3 className="card-title">{repo.name}</h3>
           <div className="card-badges">
+            {owner && (
+              <span className="owner-badge" title={`Owner: ${owner}`}>
+                <User size={12} />
+                {owner}
+              </span>
+            )}
             {isInstalled && hasRemoteChanges && (
               <span className="remote-changes-badge" title={`${behindCount} commit(s) behind`}>
                 <AlertCircle size={12} />
@@ -194,6 +228,29 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, l
           </span>
         </div>
       </div>
+
+      {isInstalled && localPath && (
+        <div className="local-path-section">
+          <div className="local-path-row">
+            <Folder size={14} className="path-icon" />
+            <span className="local-path" title={localPath}>{localPath}</span>
+            {onChangeLocation && (
+              <button
+                className={`path-change-btn ${changingLocation ? 'loading' : ''}`}
+                onClick={handleChangeLocation}
+                disabled={changingLocation}
+                title="Change local folder location"
+              >
+                {changingLocation ? (
+                  <Loader size={12} className="spin" />
+                ) : (
+                  <FolderEdit size={12} />
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="card-actions">
         {/* Primary Actions */}
@@ -297,4 +354,4 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, l
   );
 }
 
-export default ProjectCard;
+export default React.memo(ProjectCard);

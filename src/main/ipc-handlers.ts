@@ -78,6 +78,38 @@ export function registerIpcHandlers() {
     }
   });
 
+  // Batch check multiple projects at once
+  ipcMain.handle('project:batchCheck', async (_event, repoNames: string[]) => {
+    try {
+      const results = await Promise.all(
+        repoNames.map(async (repoName) => {
+          try {
+            const installed = await projectInstaller.isProjectInstalled(repoName);
+            let projectPath = null;
+            if (installed.installed) {
+              projectPath = gitOps.getProjectPath(repoName);
+            }
+            return {
+              name: repoName,
+              installed: installed.installed,
+              path: projectPath
+            };
+          } catch (error) {
+            return {
+              name: repoName,
+              installed: false,
+              path: null,
+              error: (error as Error).message
+            };
+          }
+        })
+      );
+      return { success: true, data: results };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
   // Uninstall/delete a project
   ipcMain.handle('project:uninstall', async (_event, repoName: string) => {
     try {
@@ -128,6 +160,26 @@ export function registerIpcHandlers() {
     }
   });
 
+  // Change the folder link for a project
+  ipcMain.handle('project:changeLink', async (_event, repoName, newLocalPath) => {
+    try {
+      const result = await gitOps.changeProjectLink(repoName, newLocalPath);
+      return result;
+    } catch (error) {
+      return { success: false, message: (error as Error).message };
+    }
+  });
+
+  // Remove the folder link for a project (without deleting the folder)
+  ipcMain.handle('project:removeLink', async (_event, repoName) => {
+    try {
+      const result = await gitOps.removeProjectLink(repoName);
+      return result;
+    } catch (error) {
+      return { success: false, message: (error as Error).message };
+    }
+  });
+
   // Git Operations Handlers
   ipcMain.handle('git:cloneRepository', async (_event, repoUrl, repoName) => {
     try {
@@ -147,10 +199,20 @@ export function registerIpcHandlers() {
     return { success: true, data: { projectPath } };
   });
 
-  // Check for remote changes
+  // Check for remote changes (fast - no fetch)
   ipcMain.handle('git:checkRemoteChanges', async (_event, repoName) => {
     try {
       const result = await gitOps.checkForRemoteChanges(repoName);
+      return { success: true, data: result };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  // Fetch and check for remote changes (slow but accurate)
+  ipcMain.handle('git:fetchAndCheckRemoteChanges', async (_event, repoName) => {
+    try {
+      const result = await gitOps.fetchAndCheckRemoteChanges(repoName);
       return { success: true, data: result };
     } catch (error) {
       return { success: false, error: (error as Error).message };
@@ -337,6 +399,14 @@ export function registerIpcHandlers() {
       return { success: false, canceled: true };
     }
     return { success: true, path: result.filePaths[0] };
+  });
+
+  ipcMain.handle('dialog:showOpenDialog', async (_event, options) => {
+    const result = await dialog.showOpenDialog(options);
+    return {
+      canceled: result.canceled,
+      filePaths: result.filePaths
+    };
   });
 
   // Project Groups Handlers

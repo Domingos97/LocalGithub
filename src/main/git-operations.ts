@@ -116,7 +116,28 @@ class GitOperations {
       await fs.access(projectPath);
       const git: SimpleGit = simpleGit(projectPath);
       
-      // Fetch latest changes from remote without merging
+      // Get status WITHOUT fetching - much faster but may be stale
+      // The UI can call fetchAndCheckRemoteChanges if it needs fresh data
+      const status = await git.status();
+      
+      return {
+        hasChanges: status.behind > 0,
+        ahead: status.ahead,
+        behind: status.behind
+      };
+    } catch (error) {
+      console.error('Check remote changes error:', error);
+      throw error;
+    }
+  }
+
+  async fetchAndCheckRemoteChanges(repoName: string): Promise<{ hasChanges: boolean; ahead: number; behind: number }> {
+    const projectPath = path.join(this.baseDir, repoName);
+    try {
+      await fs.access(projectPath);
+      const git: SimpleGit = simpleGit(projectPath);
+      
+      // Fetch latest changes from remote without merging (slower but accurate)
       await git.fetch();
       
       // Get status to check if we're behind
@@ -128,7 +149,7 @@ class GitOperations {
         behind: status.behind
       };
     } catch (error) {
-      console.error('Check remote changes error:', error);
+      console.error('Fetch and check remote changes error:', error);
       throw error;
     }
   }
@@ -262,6 +283,95 @@ class GitOperations {
     const mapping = await this.getProjectMapping(repoName);
     if (mapping) return mapping;
     return path.join(this.baseDir, repoName);
+  }
+
+  async changeProjectLink(repoName: string, newLocalPath: string): Promise<{ success: boolean; message: string }> {
+    try {
+      // Verify the new folder exists
+      await fs.access(newLocalPath);
+      
+      // Check if it's a git repository
+      const git: SimpleGit = simpleGit(newLocalPath);
+      try {
+        await git.status();
+      } catch {
+        return {
+          success: false,
+          message: 'The selected folder is not a valid git repository'
+        };
+      }
+
+      // Remove old symlink/mapping if exists
+      const oldPath = await this.getProjectPathAsync(repoName);
+      const symlinkPath = path.join(this.baseDir, repoName);
+      
+      try {
+        const stats = await fs.lstat(symlinkPath);
+        if (stats.isSymbolicLink() || stats.isDirectory()) {
+          await fs.rm(symlinkPath, { recursive: true, force: true });
+        }
+      } catch {
+        // No symlink exists, that's fine
+      }
+
+      // Create new symlink or update mapping
+      try {
+        await fs.symlink(newLocalPath, symlinkPath, 'junction');
+      } catch (symlinkError) {
+        // If symlink fails, update mapping
+        await this.saveProjectMapping(repoName, newLocalPath);
+      }
+
+      return {
+        success: true,
+        message: `Successfully changed link for ${repoName} to ${newLocalPath}`
+      };
+    } catch (error) {
+      console.error('Change project link error:', error);
+      return {
+        success: false,
+        message: (error as Error).message
+      };
+    }
+  }
+
+  async removeProjectLink(repoName: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const symlinkPath = path.join(this.baseDir, repoName);
+      
+      // Remove symlink if exists
+      try {
+        const stats = await fs.lstat(symlinkPath);
+        if (stats.isSymbolicLink()) {
+          await fs.unlink(symlinkPath);
+        }
+      } catch {
+        // No symlink exists
+      }
+
+      // Remove mapping from config
+      try {
+        const configData = await fs.readFile(this.configPath, 'utf-8');
+        const config = JSON.parse(configData);
+        if (config.projectMappings && config.projectMappings[repoName]) {
+          delete config.projectMappings[repoName];
+          await fs.writeFile(this.configPath, JSON.stringify(config, null, 2), 'utf-8');
+        }
+      } catch {
+        // Config doesn't exist or no mapping
+      }
+
+      return {
+        success: true,
+        message: `Successfully removed link for ${repoName}. The folder was not deleted.`
+      };
+    } catch (error) {
+      console.error('Remove project link error:', error);
+      return {
+        success: false,
+        message: (error as Error).message
+      };
+    }
   }
 }
 
