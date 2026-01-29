@@ -159,6 +159,63 @@
   flex-shrink: 0;
 }
 
+/* Database badge styles */
+.database-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.database-badge.connected {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+}
+
+.database-badge.created {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+}
+
+.database-badge.not-created {
+  background: var(--warning-bg, #fef3c7);
+  color: var(--warning-color, #d97706);
+}
+
+/* Keep backwards compatibility */
+.database-badge.not-connected {
+  background: var(--warning-bg, #fef3c7);
+  color: var(--warning-color, #d97706);
+}
+
+.database-badge svg {
+  flex-shrink: 0;
+}
+
+/* Database setup button */
+.btn.btn-database {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+  border: none;
+}
+
+.btn.btn-database:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  transform: translateY(-1px);
+}
+
+.btn.btn-database:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 .card-description {
   flex: 1 1 auto;
   color: var(--text-secondary);

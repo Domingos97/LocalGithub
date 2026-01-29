@@ -101,12 +101,117 @@ class GitOperations {
 
   async deleteProject(repoName: string): Promise<void> {
     const projectPath = path.join(this.baseDir, repoName);
+    const maxRetries = 3;
+    const retryDelay = 1500;
+
     try {
       await fs.access(projectPath);
-      await fs.rm(projectPath, { recursive: true, force: true });
-    } catch (error) {
-      console.error('Delete error:', error);
-      throw error;
+    } catch {
+      // Project doesn't exist, nothing to delete
+      return;
+    }
+
+    // On Windows, try to use system commands for more robust deletion
+    if (process.platform === 'win32') {
+      try {
+        await this.deleteWithWindowsCommands(projectPath);
+        console.log(`Successfully deleted project using Windows commands: ${repoName}`);
+        return;
+      } catch (error) {
+        console.error('Windows command deletion failed, falling back to Node.js:', error);
+      }
+    }
+
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await fs.rm(projectPath, { recursive: true, force: true });
+        console.log(`Successfully deleted project: ${repoName}`);
+        return;
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`Delete attempt ${attempt}/${maxRetries} failed:`, error);
+        
+        if (attempt < maxRetries) {
+          // Wait before retrying
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+        }
+      }
+    }
+
+    // All retries failed
+    throw new Error(
+      `Failed to delete project after ${maxRetries} attempts. ` +
+      `The folder may be locked by another process. ` +
+      `Try closing any applications that might be using files in the project. ` +
+      `Original error: ${lastError?.message}`
+    );
+  }
+
+  /**
+   * Use Windows-specific commands for more robust deletion of locked files
+   */
+  private async deleteWithWindowsCommands(projectPath: string): Promise<void> {
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+
+    // First, try to remove read-only attributes and delete files
+    // Use robocopy with empty folder trick - this is very effective at deleting locked folders
+    const tempEmptyDir = path.join(require('os').tmpdir(), `empty_${Date.now()}`);
+    
+    try {
+      // Create a temporary empty directory
+      await fs.mkdir(tempEmptyDir, { recursive: true });
+      
+      // Use robocopy to mirror the empty directory to the target (effectively deleting all contents)
+      // /MIR = Mirror mode, /R:1 = 1 retry, /W:1 = 1 second wait, /NFL /NDL /NJH /NJS = quiet output
+      const robocopyCmd = `robocopy "${tempEmptyDir}" "${projectPath}" /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NS /NC /NP`;
+      
+      try {
+        await execAsync(robocopyCmd, { timeout: 30000 });
+      } catch (robocopyError: any) {
+        // Robocopy returns non-zero exit codes for success (0-7 are success codes)
+        // Only codes 8+ indicate errors
+        if (robocopyError.code && robocopyError.code >= 8) {
+          throw robocopyError;
+        }
+      }
+      
+      // Now the directory should be empty, remove it with multiple approaches
+      // Try rd first
+      try {
+        await execAsync(`rd /s /q "${projectPath}"`, { timeout: 10000 });
+      } catch {
+        // rd failed, try rmdir
+        try {
+          await execAsync(`rmdir /s /q "${projectPath}"`, { timeout: 10000 });
+        } catch {
+          // Both failed, try Node.js fs as last resort
+          await fs.rm(projectPath, { recursive: true, force: true });
+        }
+      }
+      
+      // Verify the folder was actually deleted
+      try {
+        await fs.access(projectPath);
+        // If we get here, folder still exists - throw error
+        throw new Error('Folder still exists after deletion attempts');
+      } catch (accessError: any) {
+        if (accessError.code === 'ENOENT') {
+          // Good - folder doesn't exist anymore
+          console.log('Folder successfully deleted');
+          return;
+        }
+        // Some other access error
+        throw accessError;
+      }
+      
+    } finally {
+      // Clean up temp directory
+      try {
+        await fs.rmdir(tempEmptyDir);
+      } catch { /* ignore */ }
     }
   }
 

@@ -31,6 +31,18 @@ interface ProjectGroup {
   updatedAt: string;
 }
 
+interface DatabaseInfo {
+  hasDatabase: boolean;
+  type?: 'sqlite' | 'prisma' | 'postgres' | 'mysql' | 'mongodb' | 'redis' | 'unknown';
+  isConfigured: boolean;
+  isConnected?: boolean;
+  isCreated?: boolean;
+  configFile?: string;
+  details?: string;
+  setupCommand?: string;
+  packageManager?: string;
+}
+
 function ProjectsPage() {
   const [repos, setRepos] = useState<Repository[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,6 +53,7 @@ function ProjectsPage() {
   const [installedProjects, setInstalledProjects] = useState<Set<string>>(new Set());
   const [projectPaths, setProjectPaths] = useState<Record<string, string>>({});
   const [remoteChanges, setRemoteChanges] = useState<Record<string, { hasChanges: boolean; behindCount: number }>>({});
+  const [databaseStatus, setDatabaseStatus] = useState<Record<string, DatabaseInfo>>({});
   const [groups, setGroups] = useState<ProjectGroup[]>([]);
   const [showGroupsModal, setShowGroupsModal] = useState(false);
   const [viewMode, setViewMode] = useState<'all' | 'grouped' | 'by-owner'>('all');
@@ -92,6 +105,7 @@ function ProjectsPage() {
   const checkInstalledProjects = async (repositories: Repository[]) => {
     const installed = new Set<string>();
     const paths: Record<string, string> = {};
+    const dbInfo: Record<string, DatabaseInfo> = {};
     
     try {
       // Use batch check API - single call for all repos
@@ -105,6 +119,9 @@ function ProjectsPage() {
             installed.add(item.name);
             if (item.path) {
               paths[item.name] = item.path;
+            }
+            if (item.database) {
+              dbInfo[item.name] = item.database;
             }
           }
         });
@@ -138,6 +155,7 @@ function ProjectsPage() {
     
     setInstalledProjects(installed);
     setProjectPaths(paths);
+    setDatabaseStatus(dbInfo);
     
     // Check for remote changes in background (non-blocking)
     // Only check installed projects
@@ -146,6 +164,7 @@ function ProjectsPage() {
     }
     
     console.log('Installed projects:', installed);
+    console.log('Database status:', dbInfo);
   };
   
   const checkRemoteChangesInBackground = async (installedRepoNames: string[]) => {
@@ -210,7 +229,18 @@ function ProjectsPage() {
         // Get the project path after installation
         const pathResult = await (window as any).electronAPI.git.getProjectPath(repoName);
         if (pathResult.success) {
-          setProjectPaths(prev => ({ ...prev, [repoName]: pathResult.data.projectPath }));
+          const projectPath = pathResult.data.projectPath;
+          setProjectPaths(prev => ({ ...prev, [repoName]: projectPath }));
+          
+          // Check for database status after installation
+          try {
+            const dbResult = await (window as any).electronAPI.project.checkDatabase(projectPath);
+            if (dbResult.success && dbResult.data) {
+              setDatabaseStatus(prev => ({ ...prev, [repoName]: dbResult.data }));
+            }
+          } catch (dbError) {
+            console.warn('Failed to check database status:', dbError);
+          }
         }
         addToast({ 
           type: 'success', 
@@ -278,6 +308,11 @@ function ProjectsPage() {
           const newChanges = { ...prev };
           delete newChanges[repoName];
           return newChanges;
+        });
+        setDatabaseStatus(prev => {
+          const newStatus = { ...prev };
+          delete newStatus[repoName];
+          return newStatus;
         });
         addToast({ 
           type: 'success', 
@@ -424,6 +459,48 @@ function ProjectsPage() {
         type: 'error', 
         title: 'Error', 
         message: 'Failed to change folder location' 
+      });
+    }
+  };
+
+  const handleSetupDatabase = async (repoName: string, projectPath: string) => {
+    try {
+      addToast({ 
+        type: 'info', 
+        title: 'Setting Up Database', 
+        message: `Running database setup for ${repoName}...` 
+      });
+
+      const result = await (window as any).electronAPI.project.setupDatabase(projectPath);
+      
+      if (result.success) {
+        // Refresh database status
+        try {
+          const dbResult = await (window as any).electronAPI.project.checkDatabase(projectPath);
+          if (dbResult.success && dbResult.data) {
+            setDatabaseStatus(prev => ({ ...prev, [repoName]: dbResult.data }));
+          }
+        } catch (dbError) {
+          console.warn('Failed to refresh database status:', dbError);
+        }
+        
+        addToast({ 
+          type: 'success', 
+          title: 'Database Setup Complete', 
+          message: result.message 
+        });
+      } else {
+        addToast({ 
+          type: 'error', 
+          title: 'Database Setup Failed', 
+          message: result.message || 'Unknown error occurred'
+        });
+      }
+    } catch (error) {
+      addToast({ 
+        type: 'error', 
+        title: 'Database Setup Error', 
+        message: String(error) 
       });
     }
   };
@@ -622,40 +699,10 @@ function ProjectsPage() {
                 behindCount={remoteChanges[repo.name]?.behindCount}
                 onPull={handlePull}
                 onChangeLocation={handleChangeLocation}
+                databaseInfo={databaseStatus[repo.name]}
+                onSetupDatabase={handleSetupDatabase}
                 style={{ animationDelay: `${index * 0.05}s` }}
               />
-          <div className="grouped-projects-view owner-grouped-view">
-            {Object.entries(getReposByOwner).map(([owner, ownerRepos]) => (
-              <div key={owner} className="project-group owner-group">
-                <div className="group-header">
-                  <div className="group-title">
-                    <div className="group-color-indicator owner-indicator" />
-                    <h2>{owner}</h2>
-                    <span className="group-description">Repository Owner</span>
-                  </div>
-                  <span className="group-count">{ownerRepos.length} {ownerRepos.length === 1 ? 'repo' : 'repos'}</span>
-                </div>
-                <div className="projects-grid">
-                  {ownerRepos.map((repo, index) => (
-                    <ProjectCard
-                      key={repo.id}
-                      repo={repo}
-                      onSelect={() => navigate(`/projects/${repo.name}`)}
-                      isInstalled={installedProjects.has(repo.name)}
-                      onInstall={handleInstall}
-                      onLinkExisting={handleLinkExisting}
-                      localPath={projectPaths[repo.name]}
-                      onOpenInVSCode={handleOpenInVSCode}
-                      onUninstall={handleUninstall}
-                      hasRemoteChanges={remoteChanges[repo.name]?.hasChanges}
-                      behindCount={remoteChanges[repo.name]?.behindCount}
-                      onPull={handlePull}
-                      onChangeLocation={handleChangeLocation}
-                      style={{ animationDelay: `${index * 0.05}s` }}
-                    />
-                  ))}
-                </div>
-              </div>
             ))}
           </div>
         ) : (
@@ -700,6 +747,8 @@ function ProjectsPage() {
                               behindCount={remoteChanges[repo.name]?.behindCount}
                               onPull={handlePull}
                               onChangeLocation={handleChangeLocation}
+                              databaseInfo={databaseStatus[repo.name]}
+                              onSetupDatabase={handleSetupDatabase}
                               style={{ animationDelay: `${index * 0.05}s` }}
                             />
                           ))}
@@ -734,6 +783,8 @@ function ProjectsPage() {
                             behindCount={remoteChanges[repo.name]?.behindCount}
                             onPull={handlePull}
                             onChangeLocation={handleChangeLocation}
+                            databaseInfo={databaseStatus[repo.name]}
+                            onSetupDatabase={handleSetupDatabase}
                             style={{ animationDelay: `${index * 0.05}s` }}
                           />
                         ))}

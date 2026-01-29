@@ -113,6 +113,21 @@ export function registerIpcHandlers() {
   // Uninstall/delete a project
   ipcMain.handle('project:uninstall', async (_event, repoName: string) => {
     try {
+      // First, stop any processes managed by ProcessManager for this project
+      const stoppedManaged = processManager.stopProcessesForProject(repoName);
+      console.log(`Stopped ${stoppedManaged} managed process(es) for ${repoName}`);
+
+      // Get the project path to find orphaned processes
+      const projectPath = gitOps.getProjectPath(repoName);
+      
+      // Kill any orphaned system processes (electron, node) running from this project
+      const killedOrphaned = await processManager.killOrphanedProcesses(projectPath);
+      console.log(`Killed ${killedOrphaned} orphaned process(es) for ${repoName}`);
+
+      // Small delay to ensure file handles are released
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Now delete the project
       await gitOps.deleteProject(repoName);
       return { success: true };
     } catch (error) {

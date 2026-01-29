@@ -291,9 +291,7 @@ function ProjectNotes({ repoName }: ProjectNotesProps) {
                   <span>Add notes to track what's done and what's missing</span>
                 </>
               ) : (
-                <>
-                  <p>No {filter} notes</p>
-                </>
+                <p>No {filter} notes</p>
               )}
             </div>
           ) : (

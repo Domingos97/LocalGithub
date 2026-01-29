@@ -119,6 +119,87 @@ class ProcessManager extends EventEmitter {
     this.processes.clear();
   }
 
+  /**
+   * Stop all processes associated with a specific project
+   */
+  stopProcessesForProject(projectName: string): number {
+    let stoppedCount = 0;
+    for (const [processId, processData] of this.processes) {
+      if (processData.projectName === projectName && processData.child) {
+        processData.child.kill();
+        processData.status = 'stopped';
+        this.processes.delete(processId);
+        stoppedCount++;
+      }
+    }
+    return stoppedCount;
+  }
+
+  /**
+   * Kill any orphaned system processes (electron, node) running from a specific project path
+   * This handles cases where processes were started outside of ProcessManager or weren't properly tracked
+   */
+  async killOrphanedProcesses(projectPath: string): Promise<number> {
+    const isWindows = process.platform === 'win32';
+    let killedCount = 0;
+
+    try {
+      if (isWindows) {
+        // Use WMIC to find processes with command lines containing the project path
+        const { execSync } = require('child_process');
+        
+        // Normalize path for comparison
+        const normalizedPath = projectPath.replace(/\\/g, '\\\\');
+        
+        // Find and kill electron processes from this project
+        try {
+          const electronProcs = execSync(
+            `wmic process where "name='electron.exe' and CommandLine like '%${normalizedPath}%'" get ProcessId 2>nul`,
+            { encoding: 'utf-8', timeout: 10000 }
+          );
+          const pids = electronProcs.match(/\d+/g) || [];
+          for (const pid of pids) {
+            try {
+              execSync(`taskkill /F /PID ${pid} 2>nul`, { timeout: 5000 });
+              killedCount++;
+            } catch { /* Process may already be gone */ }
+          }
+        } catch { /* No matching processes */ }
+
+        // Also try to kill any node processes from this project
+        try {
+          const nodeProcs = execSync(
+            `wmic process where "name='node.exe' and CommandLine like '%${normalizedPath}%'" get ProcessId 2>nul`,
+            { encoding: 'utf-8', timeout: 10000 }
+          );
+          const pids = nodeProcs.match(/\d+/g) || [];
+          for (const pid of pids) {
+            try {
+              execSync(`taskkill /F /PID ${pid} 2>nul`, { timeout: 5000 });
+              killedCount++;
+            } catch { /* Process may already be gone */ }
+          }
+        } catch { /* No matching processes */ }
+      } else {
+        // Unix-like systems: use pkill or similar
+        const { execSync } = require('child_process');
+        try {
+          execSync(`pkill -f "${projectPath}"`, { timeout: 5000 });
+          killedCount++;
+        } catch { /* No matching processes or pkill failed */ }
+      }
+    } catch (error) {
+      console.error('Error killing orphaned processes:', error);
+    }
+
+    // Give processes time to fully terminate
+    if (killedCount > 0) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    return killedCount;
+  }
+
   getProcess(processId: string): RunningProcess | null {
     const data = this.processes.get(processId);
     if (!data) return null;

@@ -1,7 +1,13 @@
 {
   "appId": "com.localgithub.app",
   "productName": "LocalGitHub Manager",
-  "files": ["dist", "node_modules", "package.json"],
+  "files": ["dist", "node_modules", "package.json", ".env"],
+  "extraResources": [
+    {
+      "from": ".env",
+      "to": ".env"
+    }
+  ],
   "directories": {
     "buildResources": "assets"
   },

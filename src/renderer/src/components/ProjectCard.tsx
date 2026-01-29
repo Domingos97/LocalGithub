@@ -1,6 +1,18 @@
 import React, { useState, useMemo } from 'react';
-import { Star, GitFork, Clock, Lock, Globe, Download, Check, Loader, Code, Trash2, GitPullRequest, AlertCircle, Link, User, FolderEdit, Folder } from 'lucide-react';
+import { Star, GitFork, Clock, Lock, Globe, Download, Check, Loader, Code, Trash2, GitPullRequest, AlertCircle, Link, User, FolderEdit, Folder, Database, DatabaseZap, CircleOff } from 'lucide-react';
 import '../styles/ProjectCard.css';
+
+interface DatabaseInfo {
+  hasDatabase: boolean;
+  type?: 'sqlite' | 'prisma' | 'postgres' | 'mysql' | 'mongodb' | 'redis' | 'unknown';
+  isConfigured: boolean;
+  isConnected?: boolean;
+  isCreated?: boolean;
+  configFile?: string;
+  details?: string;
+  setupCommand?: string;
+  packageManager?: string;
+}
 
 interface ProjectCardProps {
   repo: {
@@ -27,6 +39,8 @@ interface ProjectCardProps {
   behindCount?: number;
   onPull?: (repoName: string) => Promise<void>;
   onChangeLocation?: (repoName: string) => Promise<void>;
+  databaseInfo?: DatabaseInfo | null;
+  onSetupDatabase?: (repoName: string, projectPath: string) => Promise<void>;
 }
 
 const languageColors: Record<string, string> = {
@@ -48,12 +62,13 @@ const languageColors: Record<string, string> = {
   Dart: '#00B4AB',
 };
 
-function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, localPath, onOpenInVSCode, onUninstall, style, hasRemoteChanges, behindCount, onPull, onChangeLocation }: ProjectCardProps) {
+function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, localPath, onOpenInVSCode, onUninstall, style, hasRemoteChanges, behindCount, onPull, onChangeLocation, databaseInfo, onSetupDatabase }: ProjectCardProps) {
   const [installing, setInstalling] = useState(false);
   const [uninstalling, setUninstalling] = useState(false);
   const [pulling, setPulling] = useState(false);
   const [linking, setLinking] = useState(false);
   const [changingLocation, setChangingLocation] = useState(false);
+  const [settingUpDb, setSettingUpDb] = useState(false);
   
   // Extract owner from full_name (e.g., "ebywater/Cubular_Frontend")
   const owner = useMemo(() => {
@@ -162,6 +177,59 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, l
     }
   };
 
+  const handleSetupDatabase = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onSetupDatabase || settingUpDb || !isInstalled || !localPath) return;
+    
+    setSettingUpDb(true);
+    try {
+      await onSetupDatabase(repo.name, localPath);
+    } finally {
+      setSettingUpDb(false);
+    }
+  };
+
+  // Generate database badge content
+  const getDatabaseBadge = () => {
+    if (!isInstalled || !databaseInfo) return null;
+    
+    if (!databaseInfo.hasDatabase) {
+      return null; // Don't show badge if no database
+    }
+    
+    const dbTypeLabel = databaseInfo.type ? databaseInfo.type.charAt(0).toUpperCase() + databaseInfo.type.slice(1) : 'DB';
+    const isConnected = databaseInfo.isConnected;
+    const isCreated = databaseInfo.isCreated;
+    
+    // Determine badge state: connected (green), created but not connected (blue), not created (orange)
+    let badgeClass = 'not-created';
+    let statusText = 'Not Created';
+    let Icon = CircleOff;
+    
+    if (isConnected) {
+      badgeClass = 'connected';
+      statusText = 'Connected';
+      Icon = DatabaseZap;
+    } else if (isCreated) {
+      badgeClass = 'created';
+      statusText = 'Created';
+      Icon = Database;
+    }
+    
+    return (
+      <span 
+        className={`database-badge ${badgeClass}`}
+        title={`${dbTypeLabel}: ${statusText}${databaseInfo.details ? ` - ${databaseInfo.details}` : ''}`}
+      >
+        <Icon size={12} />
+        {dbTypeLabel}
+      </span>
+    );
+  };
+
+  // Check if database needs setup
+  const needsDatabaseSetup = databaseInfo?.hasDatabase && !databaseInfo?.isConnected && databaseInfo?.setupCommand;
+
   return (
     <div className="project-card animate-slideUp" onClick={onSelect} style={style}>
       <div className="card-header">
@@ -174,6 +242,7 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, l
                 {owner}
               </span>
             )}
+            {getDatabaseBadge()}
             {isInstalled && hasRemoteChanges && (
               <span className="remote-changes-badge" title={`${behindCount} commit(s) behind`}>
                 <AlertCircle size={12} />
@@ -307,6 +376,26 @@ function ProjectCard({ repo, onSelect, isInstalled, onInstall, onLinkExisting, l
               >
                 <Code size={14} />
                 <span>Open in VS Code</span>
+              </button>
+            )}
+            {needsDatabaseSetup && onSetupDatabase && (
+              <button
+                className={`btn btn-database ${settingUpDb ? 'loading' : ''}`}
+                onClick={handleSetupDatabase}
+                disabled={settingUpDb}
+                title={`Setup database: ${databaseInfo?.setupCommand || 'Generate database'}`}
+              >
+                {settingUpDb ? (
+                  <>
+                    <Loader size={14} className="spin" />
+                    <span>Setting up...</span>
+                  </>
+                ) : (
+                  <>
+                    <Database size={14} />
+                    <span>Setup DB</span>
+                  </>
+                )}
               </button>
             )}
             <button

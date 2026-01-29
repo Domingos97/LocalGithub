@@ -72,7 +72,14 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
         <div className="toast-title">{toast.title}</div>
         {toast.message && <div className="toast-message">{toast.message}</div>}
       </div>
-      <button className="toast-close" onClick={onClose}>
+      <button 
+        type="button"
+        className="toast-close" 
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+      >
         <X size={16} />
       </button>
     </div>
