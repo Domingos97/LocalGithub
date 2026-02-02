@@ -44,6 +44,8 @@ const api = {
     getProjectPath: (name: string) => ipcRenderer.invoke('git:getProjectPath', name),
     checkRemoteChanges: (repoName: string) => 
       ipcRenderer.invoke('git:checkRemoteChanges', repoName),
+    fetchAndCheckRemoteChanges: (repoName: string) => 
+      ipcRenderer.invoke('git:fetchAndCheckRemoteChanges', repoName),
     pull: (repoName: string) => 
       ipcRenderer.invoke('git:pull', repoName),
     onCloneProgress: (callback: (data: any) => void) => {
@@ -94,25 +96,6 @@ const api = {
   dialog: {
     selectFolder: () => ipcRenderer.invoke('dialog:selectFolder'),
     showOpenDialog: (options: any) => ipcRenderer.invoke('dialog:showOpenDialog', options),
-  },
-
-  // Project Groups Management
-  groups: {
-    getAll: () => ipcRenderer.invoke('groups:getAll'),
-    get: (groupId: string) => ipcRenderer.invoke('groups:get', groupId),
-    create: (name: string, description?: string, color?: string) => 
-      ipcRenderer.invoke('groups:create', name, description, color),
-    update: (groupId: string, updates: any) => 
-      ipcRenderer.invoke('groups:update', groupId, updates),
-    delete: (groupId: string) => ipcRenderer.invoke('groups:delete', groupId),
-    addRepo: (groupId: string, repoName: string) => 
-      ipcRenderer.invoke('groups:addRepo', groupId, repoName),
-    removeRepo: (groupId: string, repoName: string) => 
-      ipcRenderer.invoke('groups:removeRepo', groupId, repoName),
-    getForRepo: (repoName: string) => 
-      ipcRenderer.invoke('groups:getForRepo', repoName),
-    moveRepo: (repoName: string, targetGroupId: string) => 
-      ipcRenderer.invoke('groups:moveRepo', repoName, targetGroupId),
   },
 };
 

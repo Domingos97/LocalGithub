@@ -32,36 +32,8 @@ class ProjectInstaller {
     }
     
     // Python project detection
-    if (files.includes('requirements.txt')) {
-      return {
-        packageManager: 'pip',
-        installCommand: 'pip install -r requirements.txt',
-        startCommand: 'python main.py',
-      };
-    }
-    
-    if (files.includes('pyproject.toml')) {
-      const content = await fs.readFile(path.join(projectPath, 'pyproject.toml'), 'utf-8');
-      if (content.includes('[tool.poetry]')) {
-        return {
-          packageManager: 'poetry',
-          installCommand: 'poetry install',
-          startCommand: 'poetry run python main.py',
-        };
-      }
-      return {
-        packageManager: 'pip',
-        installCommand: 'pip install -e .',
-        startCommand: 'python -m ' + path.basename(projectPath),
-      };
-    }
-    
-    if (files.includes('setup.py')) {
-      return {
-        packageManager: 'pip',
-        installCommand: 'pip install -e .',
-        startCommand: 'python -m ' + path.basename(projectPath),
-      };
+    if (files.includes('requirements.txt') || files.includes('pyproject.toml') || files.includes('setup.py')) {
+      return await this.detectPythonConfig(projectPath, files);
     }
     
     // Rust project detection
@@ -175,6 +147,140 @@ class ProjectInstaller {
       startCommand: scripts.start ? `${packageManager} run start` : 
                    scripts.dev ? `${packageManager} run dev` : undefined,
     };
+  }
+
+  /**
+   * Detect Python specific configuration
+   */
+  private async detectPythonConfig(projectPath: string, files: string[]): Promise<InstallConfig> {
+    // Determine package manager and install command
+    let packageManager = 'pip';
+    let installCommand = '';
+    let runPrefix = 'python';
+
+    if (files.includes('pyproject.toml')) {
+      try {
+        const content = await fs.readFile(path.join(projectPath, 'pyproject.toml'), 'utf-8');
+        if (content.includes('[tool.poetry]')) {
+          packageManager = 'poetry';
+          installCommand = 'poetry install';
+          runPrefix = 'poetry run python';
+        } else {
+          installCommand = 'pip install -e .';
+        }
+      } catch {
+        installCommand = 'pip install -e .';
+      }
+    } else if (files.includes('requirements.txt')) {
+      installCommand = 'pip install -r requirements.txt';
+    } else if (files.includes('setup.py')) {
+      installCommand = 'pip install -e .';
+    }
+
+    // Try to find the actual entry point
+    const startCommand = await this.detectPythonEntryPoint(projectPath, files, runPrefix);
+
+    return {
+      packageManager,
+      installCommand,
+      startCommand,
+    };
+  }
+
+  /**
+   * Detect the Python entry point by looking for common patterns
+   */
+  private async detectPythonEntryPoint(projectPath: string, files: string[], runPrefix: string): Promise<string | undefined> {
+    // Common Python entry point file names in order of priority
+    const commonEntryPoints = [
+      'main.py',
+      'app.py', 
+      'run.py',
+      'start.py',
+      'server.py',
+      '__main__.py',
+      'cli.py',
+      'manage.py',  // Django
+    ];
+
+    // Check for common entry point files
+    for (const entryPoint of commonEntryPoints) {
+      if (files.includes(entryPoint)) {
+        // Special case for Django's manage.py
+        if (entryPoint === 'manage.py') {
+          return `${runPrefix} manage.py runserver`;
+        }
+        return `${runPrefix} ${entryPoint}`;
+      }
+    }
+
+    // Check pyproject.toml for scripts/entry points
+    if (files.includes('pyproject.toml')) {
+      try {
+        const content = await fs.readFile(path.join(projectPath, 'pyproject.toml'), 'utf-8');
+        
+        // Look for [project.scripts] or [tool.poetry.scripts]
+        const scriptsMatch = content.match(/\[(?:project\.scripts|tool\.poetry\.scripts)\]([\s\S]*?)(?:\[|$)/);
+        if (scriptsMatch) {
+          const scriptsSection = scriptsMatch[1];
+          const firstScript = scriptsSection.match(/(\w+)\s*=/);
+          if (firstScript) {
+            // If using poetry, the script will be available after install
+            if (runPrefix.includes('poetry')) {
+              return `poetry run ${firstScript[1]}`;
+            }
+            return firstScript[1];
+          }
+        }
+      } catch {
+        // Ignore errors reading pyproject.toml
+      }
+    }
+
+    // Check setup.py for console_scripts
+    if (files.includes('setup.py')) {
+      try {
+        const content = await fs.readFile(path.join(projectPath, 'setup.py'), 'utf-8');
+        const entryPointsMatch = content.match(/entry_points\s*=\s*\{[\s\S]*?['"]console_scripts['"]\s*:\s*\[([\s\S]*?)\]/);
+        if (entryPointsMatch) {
+          const scriptMatch = entryPointsMatch[1].match(/['"](\w+)\s*=/);
+          if (scriptMatch) {
+            return scriptMatch[1];
+          }
+        }
+      } catch {
+        // Ignore errors reading setup.py
+      }
+    }
+
+    // Look for any .py file in the root that might be an entry point
+    const pythonFiles = files.filter(f => f.endsWith('.py') && !f.startsWith('_') && f !== 'setup.py' && f !== 'conftest.py');
+    
+    // Check if any Python file has a if __name__ == "__main__" block
+    for (const pyFile of pythonFiles) {
+      try {
+        const content = await fs.readFile(path.join(projectPath, pyFile), 'utf-8');
+        if (content.includes('if __name__') && content.includes('__main__')) {
+          return `${runPrefix} ${pyFile}`;
+        }
+      } catch {
+        // Ignore errors reading individual files
+      }
+    }
+
+    // Check for a package with __main__.py inside
+    const projectName = path.basename(projectPath).toLowerCase().replace(/-/g, '_');
+    try {
+      const subFiles = await fs.readdir(path.join(projectPath, projectName));
+      if (subFiles.includes('__main__.py')) {
+        return `${runPrefix} -m ${projectName}`;
+      }
+    } catch {
+      // Package directory doesn't exist
+    }
+
+    // No entry point found - return undefined so we don't try to run a non-existent file
+    return undefined;
   }
 
   /**

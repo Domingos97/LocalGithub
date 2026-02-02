@@ -4,7 +4,6 @@ import Sidebar from './components/Sidebar';
 import { ToastProvider } from './components/Toast';
 import DashboardPage from './pages/DashboardPage';
 import ProjectsPage from './pages/ProjectsPage';
-import ProjectDetailsPage from './pages/ProjectDetailsPage';
 import SettingsPage from './pages/SettingsPage';
 import Spinner from './components/Spinner';
 import { AlertCircle, KeyRound } from 'lucide-react';
@@ -92,7 +91,6 @@ function App() {
             <Routes>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/projects" element={<ProjectsPage />} />
-              <Route path="/projects/:repoName" element={<ProjectDetailsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </main>
